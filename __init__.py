@@ -14,9 +14,78 @@ from typing import Any
 from .client import ConPortClient
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 
 PROVIDER_NAME = "conport"
+
+
+_SYSTEM_PROMPT_BLOCK = """\
+## ConPort — Persistent Memory
+
+ConPort is your long-term knowledge graph. Identity is already bound to this
+profile; recall is auto-injected before every turn.
+
+### NEVER store
+- Secrets, passwords, API keys, tokens — even partially.
+  Bad: "API key: 0a732108..."  Good: "API key is in $API_KEY env var"
+
+### Quality
+1. Extract the insight, not the story. Bad: "Task X completed: did Y, then Z."
+   Good: "POST /api/agents/{id}/skills/sync — desiredSkills defaults to null,
+   must be passed explicitly."
+2. Dedup is automatic. Server supersedes similar memories (>0.85 similarity).
+   Just write — don't pre-search.
+3. Use the right type. `feedback` and `pattern` are searchable by type;
+   don't dump everything as `fact`.
+4. Supersede outdated memories. Bug fixed? Config changed? Call `conport_forget`.
+5. Pin critical decisions. `pinned=true` for memories that must never decay.
+
+### Choosing type + category
+
+| What happened | memory_type | category |
+|---------------|-------------|----------|
+| Environment quirk | `fact` | `resource` |
+| User correction | `feedback` | `area` |
+| Reusable approach | `pattern` | `resource` |
+| Session log / daily event | `note` | `project` |
+| User preference | `tacit` | `area` |
+| Architecture choice | `decision` | `area` |
+
+### Memory types
+
+- `fact` — durable knowledge about the environment.
+- `feedback` — user/orchestrator corrected your behavior.
+- `pattern` — reusable approach or recurring issue.
+- `note` — daily timeline entry, event, session log.
+- `tacit` — user behavior patterns and preferences.
+- `decision` — architectural/design choice with rationale.
+
+### PARA categories
+
+- `project` — active work with a goal or deadline.
+- `area` — ongoing responsibility, no end date.
+- `resource` — reference material (default).
+- `archive` — inactive; moved here when no longer relevant.
+
+### Workflow
+
+| Trigger | Action |
+|---------|--------|
+| Learned something reusable | `conport_remember` (fact/pattern/feedback + category) |
+| End of session | `conport_remember` (type=note, category=project) |
+| User corrected behavior | `conport_remember` (type=feedback, category=area) |
+| Need past context | recall is auto-injected; call `conport_recall` for targeted lookups |
+| Memory outdated | `conport_forget` (soft) or with `hard_delete=true` |
+| Architectural decision | `conport_remember` (type=decision, pinned=true, category=area) |
+| Link related memories | `conport_link_memories` (relation_type: supersedes, derives_from, contradicts, supports, related_to) |
+| End of day / week | `conport_reflect` (scope=day or week) |
+
+### Checklist
+- New learning saved with correct type + category?
+- No secrets in memory content?
+- Outdated memories superseded or forgotten?
+- `conport_reflect(scope="day")` at end of session for consolidation?
+"""
 
 
 def _read_api_key_from_env_file(hermes_home: str) -> str | None:
@@ -184,11 +253,7 @@ class ConPortMemoryProvider:
     def system_prompt_block(self) -> str | None:
         if not self._agent_uuid:
             return None
-        return (
-            "You have access to ConPort long-term memory. "
-            "Use `conport_remember` to persist durable facts, decisions, and lessons. "
-            "Use `conport_recall` to surface relevant prior context."
-        )
+        return _SYSTEM_PROMPT_BLOCK
 
     def prefetch(self, query: str) -> str | None:
         if not (self._client and self._agent_uuid):
