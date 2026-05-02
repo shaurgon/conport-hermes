@@ -17,18 +17,30 @@ import os
 import time
 
 # Hermes' discover_plugin_cli_commands loads cli.py standalone (no parent
-# package set up), so relative imports fail at argparse-build time. Fall
-# back to sys.path injection so the same file works in both contexts:
-# loaded as part of the package (during a session) and loaded bare.
+# package set up), so relative imports fail at argparse-build time. We
+# fall back to importlib loading the sibling files into private locals —
+# crucially WITHOUT modifying sys.path, since polluting sys.path with the
+# plugin directory makes Hermes' `import tools.*` resolve to our tools.py.
 try:
     from .client import ConPortClient
     from .setup_wizard import run_identity_wizard
 except ImportError:
-    import sys
+    import importlib.util
     from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from client import ConPortClient  # type: ignore[no-redef]
-    from setup_wizard import run_identity_wizard  # type: ignore[no-redef]
+
+    def _load_sibling(name: str):
+        path = Path(__file__).resolve().parent / f"{name}.py"
+        spec = importlib.util.spec_from_file_location(f"_conport_hermes_cli_{name}", str(path))
+        if not spec or not spec.loader:
+            raise ImportError(name)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    _client_mod = _load_sibling("client")
+    _setup_mod = _load_sibling("setup_wizard")
+    ConPortClient = _client_mod.ConPortClient  # type: ignore[no-redef]
+    run_identity_wizard = _setup_mod.run_identity_wizard  # type: ignore[no-redef]
 
 DEFAULT_API_BASE = "https://api.conport.app"
 
