@@ -3,10 +3,11 @@
 ConPort memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — long-term knowledge graph for autonomous agents, with semantic recall, decay-aware scoring, and reflection.
 
 ```bash
-pip install conport-hermes
-hermes memory setup        # pick `conport` from the list
-hermes conport init        # one-time identity wizard
+hermes plugins install shaurgon/conport-hermes
+hermes memory setup     # pick `conport-hermes`, paste cport_live_… key — done
 ```
+
+A default ConPort agent is auto-created and bound to your Hermes profile in one shot. `hermes conport init` is only needed to rebind to a different agent.
 
 ## What you get
 
@@ -44,13 +45,15 @@ Pick `conport-hermes` from the list. The wizard prompts for one thing:
 
 Everything else (base URL, recall limit, prefetch timeout) ships with sane defaults. Self-hosters or tuners can override them by writing `$HERMES_HOME/conport_provider.json` directly (see [Configuration reference](#configuration-reference)).
 
-### 3. Bind your Hermes profile to a ConPort agent
+### 3. (Optional) Rebind to a different ConPort agent
+
+After `hermes memory setup`, your profile is auto-bound to an agent named `hermes-<hostname>`. To rebind — to attach an existing agent UUID, or pick a different name:
 
 ```bash
 hermes conport init
 ```
 
-This runs once per Hermes profile. Pick **Create new agent** for a fresh agent or **Attach to existing UUID** to import one created elsewhere. Identity is persisted to `$HERMES_HOME/conport.json` and locks the profile to one ConPort agent (per [decision D484](https://github.com/shaurgon/conport-global)).
+Identity is persisted to `$HERMES_HOME/conport.json` and locks the profile to one ConPort agent (per decision D484).
 
 ### 4. Use it
 
@@ -149,7 +152,7 @@ Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
 ## Status
 
-**Alpha** (v0.1.2). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
+**Alpha** (v0.1.3). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
 
 ## Source
 

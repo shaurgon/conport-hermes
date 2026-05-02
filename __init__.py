@@ -15,9 +15,24 @@ from .client import ConPortClient
 from .cli import register_cli
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 PROVIDER_NAME = "conport"
+
+
+def _read_api_key_from_env_file(hermes_home: str) -> str | None:
+    """Read CONPORT_API_KEY from $HERMES_HOME/.env in case the wizard
+    just wrote it but our process env hasn't been refreshed yet."""
+    env_path = Path(hermes_home) / ".env"
+    if not env_path.exists():
+        return None
+    try:
+        for line in env_path.read_text().splitlines():
+            if line.startswith("CONPORT_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'") or None
+    except OSError:
+        return None
+    return None
 DEFAULT_API_BASE = "https://api.conport.app"
 IDENTITY_FILENAME = "conport.json"
 PROVIDER_CONFIG_FILENAME = "conport_provider.json"
@@ -61,10 +76,46 @@ class ConPortMemoryProvider:
         ]
 
     def save_config(self, values: dict[str, Any], hermes_home: str) -> None:
+        """Persist non-secret config and auto-bootstrap identity.
+
+        Hermes calls this after the schema wizard has already saved the API
+        key to ``$HERMES_HOME/.env``. We finish the job by creating a default
+        ConPort agent (one-shot, idempotent) so the user doesn't need to run
+        ``hermes conport init`` separately. They still can, to rebind to a
+        different agent.
+        """
         non_secret = {k: v for k, v in values.items() if k != "api_key"}
         path = Path(hermes_home) / PROVIDER_CONFIG_FILENAME
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(non_secret, indent=2))
+        self._bootstrap_identity_if_missing(hermes_home)
+
+    def _bootstrap_identity_if_missing(self, hermes_home: str) -> None:
+        identity_file = Path(hermes_home) / IDENTITY_FILENAME
+        if identity_file.exists():
+            return
+        api_key = os.environ.get("CONPORT_API_KEY") or _read_api_key_from_env_file(hermes_home)
+        if not api_key:
+            print(
+                "  Note: ConPort API key not found yet — run `hermes conport init` "
+                "after the wizard finishes."
+            )
+            return
+        from .setup_wizard import _create_agent, _save
+
+        import socket
+        agent_name = f"hermes-{socket.gethostname()}"
+        try:
+            agent = _create_agent(DEFAULT_API_BASE, api_key, agent_name)
+        except Exception as e:  # noqa: BLE001 — don't crash the wizard
+            print(f"  Note: ConPort agent auto-create failed ({e}); run `hermes conport init`.")
+            return
+        identity = {
+            "agent_uuid": agent.get("uuid") or agent.get("agent_uuid"),
+            "agent_name": agent.get("name", agent_name),
+        }
+        _save(hermes_home, identity)
+        print(f"  Bound to ConPort agent: {identity['agent_name']} ({identity['agent_uuid']})")
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         """Hermes runtime context arrives via kwargs (run_agent.py:1705).
