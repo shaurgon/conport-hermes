@@ -1,0 +1,14 @@
+name: conport-hermes
+version: 0.1.0
+description: ConPort memory provider — long-term knowledge graph for Hermes Agent.
+author: shaurgon
+hooks:
+  - prefetch
+  - sync_turn
+  - on_session_end
+  - shutdown
+requires_env:
+  - name: CONPORT_API_KEY
+    description: ConPort API key (cport_live_...)
+    url: https://conport.app
+    secret: true
