@@ -30,7 +30,7 @@ def _load_existing(hermes_home: str) -> dict[str, Any] | None:
 def _save(hermes_home: str, identity: dict[str, Any]) -> None:
     p = _identity_path(hermes_home)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(identity, indent=2))
+    p.write_text(json.dumps(identity, indent=2, ensure_ascii=False))
 
 
 def _validate_agent(api_base_url: str, api_key: str, agent_uuid: str) -> dict[str, Any]:

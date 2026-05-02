@@ -14,7 +14,7 @@ from typing import Any
 from .client import ConPortClient
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 PROVIDER_NAME = "conport"
 
@@ -86,7 +86,7 @@ class ConPortMemoryProvider:
         non_secret = {k: v for k, v in values.items() if k != "api_key"}
         path = Path(hermes_home) / PROVIDER_CONFIG_FILENAME
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(non_secret, indent=2))
+        path.write_text(json.dumps(non_secret, indent=2, ensure_ascii=False))
         self._bootstrap_identity_if_missing(hermes_home)
 
     def _bootstrap_identity_if_missing(self, hermes_home: str) -> None:
