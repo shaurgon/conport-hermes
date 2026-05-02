@@ -1,4 +1,4 @@
-"""Identity wizard run by `hermes conport init`.
+"""Identity wizard run by `hermes conport-hermes init`.
 
 Per decision D484: one Hermes profile maps 1:1 to one ConPort agent.
 Persists {agent_uuid, agent_name} to $HERMES_HOME/conport.json.
