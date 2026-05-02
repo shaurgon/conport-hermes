@@ -150,6 +150,19 @@ No — each Hermes profile binds to one ConPort agent UUID, and ConPort's row-le
 **Q. Does this work with ConPort self-hosted?**
 Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
+## Daily reflect (optional)
+
+Hermes' `cron` is LLM-driven and would launch a full session per run; for our
+reflect (a single REST call) that's overkill. Use system cron instead — the
+CLI auto-loads `CONPORT_API_KEY` from `$HERMES_HOME/.env`, so no env wiring:
+
+```cron
+# crontab -e
+0 3 * * * /home/USER/.hermes/hermes-agent/venv/bin/hermes conport-hermes reflect --scope day > /tmp/conport-reflect.log 2>&1
+```
+
+Weekly: replace `--scope day` with `--scope week`.
+
 ## Status
 
 **Alpha** (v0.1.4). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.

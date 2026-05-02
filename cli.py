@@ -60,8 +60,27 @@ def _api_base() -> str:
     return os.environ.get("CONPORT_API_BASE_URL", DEFAULT_API_BASE)
 
 
+def _api_key() -> str | None:
+    """Resolve API key — env first, then $HERMES_HOME/.env (for cron contexts)."""
+    key = os.environ.get("CONPORT_API_KEY")
+    if key:
+        return key
+    env_file = os.path.join(_hermes_home(), ".env")
+    if not os.path.exists(env_file):
+        return None
+    try:
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("CONPORT_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'") or None
+    except OSError:
+        return None
+    return None
+
+
 def _client_and_uuid() -> tuple[ConPortClient, str]:
-    api_key = os.environ.get("CONPORT_API_KEY")
+    api_key = _api_key()
     if not api_key:
         raise SystemExit(
             "CONPORT_API_KEY is not set. Run `hermes memory setup` first."
@@ -82,7 +101,7 @@ def conport_hermes_command(args: argparse.Namespace) -> None:
     sub = getattr(args, "conport_hermes_subcommand", None)
 
     if sub == "init":
-        api_key = os.environ.get("CONPORT_API_KEY")
+        api_key = _api_key()
         if not api_key:
             raise SystemExit("CONPORT_API_KEY is not set. Run `hermes memory setup` first.")
         run_identity_wizard(

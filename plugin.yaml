@@ -1,5 +1,5 @@
 name: conport-hermes
-version: 0.1.8
+version: 0.1.9
 description: ConPort memory provider — long-term knowledge graph for Hermes Agent.
 author: shaurgon
 pip_dependencies:
