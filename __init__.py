@@ -14,7 +14,7 @@ from typing import Any
 from .client import ConPortClient
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.9"
+__version__ = "0.1.10"
 
 PROVIDER_NAME = "conport"
 
@@ -237,13 +237,24 @@ class ConPortMemoryProvider:
     # --- tool surface (per MemoryProvider contract) ---
 
     def get_tool_schemas(self) -> list[dict[str, Any]]:
-        if not (self._client and self._agent_uuid):
-            return []
+        # Always return the full schema list. Hermes collects schemas during
+        # add_provider() — BEFORE initialize() runs — to build its tool
+        # registry; a conditional gate here makes the tools invisible to the
+        # LLM ("Unknown tool"). The not-initialized case is handled in
+        # handle_tool_call.
         return list(TOOL_SCHEMAS)
 
     def handle_tool_call(self, name: str, args: dict[str, Any]) -> str:
         if not (self._client and self._agent_uuid):
-            return json.dumps({"error": "ConPort provider not initialized; run `hermes conport-hermes init`."})
+            return json.dumps(
+                {
+                    "error": (
+                        "ConPort provider not initialized — no identity. "
+                        "Run `hermes conport-hermes init`."
+                    )
+                },
+                ensure_ascii=False,
+            )
         return dispatch_tool(
             tool_name=name, args=args, client=self._client, agent_uuid=self._agent_uuid
         )
