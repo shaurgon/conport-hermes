@@ -33,7 +33,7 @@ class ConPortClient:
             base_url=self.base_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "User-Agent": "conport-hermes/0.1.3",
+                "User-Agent": "conport-hermes/0.1.4",
             },
             timeout=default_timeout,
         )

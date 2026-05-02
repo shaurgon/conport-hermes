@@ -12,10 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from .client import ConPortClient
-from .cli import register_cli
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 PROVIDER_NAME = "conport"
 
@@ -81,7 +80,7 @@ class ConPortMemoryProvider:
         Hermes calls this after the schema wizard has already saved the API
         key to ``$HERMES_HOME/.env``. We finish the job by creating a default
         ConPort agent (one-shot, idempotent) so the user doesn't need to run
-        ``hermes conport init`` separately. They still can, to rebind to a
+        ``hermes conport-hermes init`` separately. They still can, to rebind to a
         different agent.
         """
         non_secret = {k: v for k, v in values.items() if k != "api_key"}
@@ -97,7 +96,7 @@ class ConPortMemoryProvider:
         api_key = os.environ.get("CONPORT_API_KEY") or _read_api_key_from_env_file(hermes_home)
         if not api_key:
             print(
-                "  Note: ConPort API key not found yet — run `hermes conport init` "
+                "  Note: ConPort API key not found yet — run `hermes conport-hermes init` "
                 "after the wizard finishes."
             )
             return
@@ -108,7 +107,7 @@ class ConPortMemoryProvider:
         try:
             agent = _create_agent(DEFAULT_API_BASE, api_key, agent_name)
         except Exception as e:  # noqa: BLE001 — don't crash the wizard
-            print(f"  Note: ConPort agent auto-create failed ({e}); run `hermes conport init`.")
+            print(f"  Note: ConPort agent auto-create failed ({e}); run `hermes conport-hermes init`.")
             return
         identity = {
             "agent_uuid": agent.get("uuid") or agent.get("agent_uuid"),
@@ -175,7 +174,7 @@ class ConPortMemoryProvider:
 
     def handle_tool_call(self, name: str, args: dict[str, Any]) -> str:
         if not (self._client and self._agent_uuid):
-            return json.dumps({"error": "ConPort provider not initialized; run `hermes conport init`."})
+            return json.dumps({"error": "ConPort provider not initialized; run `hermes conport-hermes init`."})
         return dispatch_tool(
             tool_name=name, args=args, client=self._client, agent_uuid=self._agent_uuid
         )
@@ -226,9 +225,13 @@ class ConPortMemoryProvider:
 
 
 def register(ctx: Any) -> None:
-    """Hermes calls this on plugin load."""
+    """Hermes calls this on plugin load.
+
+    CLI subcommands (``hermes conport-hermes <cmd>``) live in cli.py and
+    are discovered separately via plugins.memory.discover_plugin_cli_commands;
+    not registered here.
+    """
     ctx.register_memory_provider(ConPortMemoryProvider())
-    register_cli(ctx)
 
 
 __all__ = ["ConPortMemoryProvider", "register", "__version__"]

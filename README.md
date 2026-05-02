@@ -7,7 +7,7 @@ hermes plugins install shaurgon/conport-hermes
 hermes memory setup     # pick `conport-hermes`, paste cport_live_… key — done
 ```
 
-A default ConPort agent is auto-created and bound to your Hermes profile in one shot. `hermes conport init` is only needed to rebind to a different agent.
+A default ConPort agent is auto-created and bound to your Hermes profile in one shot. `hermes conport-hermes init` is only needed to rebind to a different agent.
 
 ## What you get
 
@@ -15,7 +15,7 @@ A default ConPort agent is auto-created and bound to your Hermes profile in one 
 - **Auto-recall** injected before every turn (non-blocking, 2-second budget)
 - **Five tools** the agent can call: `conport_remember`, `conport_recall`, `conport_forget`, `conport_reflect`, `conport_link_memories`
 - **Reflection** — dedup, supersede stale memories, surface patterns
-- **CLI** — `hermes conport status | agent | memories | reflect | tail | init`
+- **CLI** — `hermes conport-hermes status | agent | memories | reflect | tail | init`
 
 ## Prerequisites
 
@@ -50,7 +50,7 @@ Everything else (base URL, recall limit, prefetch timeout) ships with sane defau
 After `hermes memory setup`, your profile is auto-bound to an agent named `hermes-<hostname>`. To rebind — to attach an existing agent UUID, or pick a different name:
 
 ```bash
-hermes conport init
+hermes conport-hermes init
 ```
 
 Identity is persisted to `$HERMES_HOME/conport.json` and locks the profile to one ConPort agent (per decision D484).
@@ -105,27 +105,27 @@ Every memory has:
 ## CLI reference
 
 ```bash
-hermes conport status                  # identity, memory count, last activity
-hermes conport agent                   # full agent record (JSON)
-hermes conport memories [--limit N]    # list recent memories
-hermes conport tail [--interval 2]     # poll-based stream of new memories
-hermes conport reflect [--scope day]   # manual reflect; scope: day | week | full
-hermes conport init                    # (re)run the identity wizard
+hermes conport-hermes status                  # identity, memory count, last activity
+hermes conport-hermes agent                   # full agent record (JSON)
+hermes conport-hermes memories [--limit N]    # list recent memories
+hermes conport-hermes tail [--interval 2]     # poll-based stream of new memories
+hermes conport-hermes reflect [--scope day]   # manual reflect; scope: day | week | full
+hermes conport-hermes init                    # (re)run the identity wizard
 ```
 
 ## Identity model
 
 One Hermes profile maps 1:1 to one ConPort agent (decision D484). To run multiple agents, run multiple Hermes profiles via `HERMES_HOME=~/.hermes-agent-2 hermes …`.
 
-To **switch** profiles to a different agent, delete `$HERMES_HOME/conport.json` and re-run `hermes conport init`.
+To **switch** profiles to a different agent, delete `$HERMES_HOME/conport.json` and re-run `hermes conport-hermes init`.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `401 Unauthorized` on first call | Bad or rotated API key | Open `$HERMES_HOME/.env`, replace `CONPORT_API_KEY`; or rotate via the ConPort dashboard |
-| `No identity at …/conport.json` | Wizard never ran | `hermes conport init` |
-| `404` on `/agents/<uuid>` | Agent was deleted server-side | `rm $HERMES_HOME/conport.json && hermes conport init` |
+| `No identity at …/conport.json` | Wizard never ran | `hermes conport-hermes init` |
+| `404` on `/agents/<uuid>` | Agent was deleted server-side | `rm $HERMES_HOME/conport.json && hermes conport-hermes init` |
 | Recall returns nothing in fresh session | Brand-new agent — memory is empty | Use `conport_remember` a few times; reflect pulls patterns later |
 | Recall is slow / times out | Network to ConPort exceeds 2s | Bump `recall_timeout_seconds` (but stays non-blocking by design) |
 | Tool calls never reach ConPort | Provider deactivated | `hermes memory status` — confirm `conport` is the active provider |
@@ -152,7 +152,7 @@ Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
 ## Status
 
-**Alpha** (v0.1.3). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
+**Alpha** (v0.1.4). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
 
 ## Source
 
