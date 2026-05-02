@@ -14,7 +14,7 @@ from typing import Any
 from .client import ConPortClient
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 PROVIDER_NAME = "conport"
 

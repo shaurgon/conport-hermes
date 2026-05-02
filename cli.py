@@ -16,8 +16,19 @@ import json
 import os
 import time
 
-from .client import ConPortClient
-from .setup_wizard import run_identity_wizard
+# Hermes' discover_plugin_cli_commands loads cli.py standalone (no parent
+# package set up), so relative imports fail at argparse-build time. Fall
+# back to sys.path injection so the same file works in both contexts:
+# loaded as part of the package (during a session) and loaded bare.
+try:
+    from .client import ConPortClient
+    from .setup_wizard import run_identity_wizard
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from client import ConPortClient  # type: ignore[no-redef]
+    from setup_wizard import run_identity_wizard  # type: ignore[no-redef]
 
 DEFAULT_API_BASE = "https://api.conport.app"
 
