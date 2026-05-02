@@ -38,12 +38,11 @@ The package registers itself under the `hermes_agent.plugins` entry-point group;
 hermes memory setup
 ```
 
-Pick `conport` from the list. The wizard will prompt for:
+Pick `conport-hermes` from the list. The wizard prompts for one thing:
 
 - `CONPORT_API_KEY` — your `cport_live_…` key (saved to `$HERMES_HOME/.env`)
-- `api_base_url` — leave default `https://api.conport.app` unless self-hosting
-- `recall_limit` — how many memories per prefetch (default 5)
-- `recall_timeout_seconds` — hard cap so prefetch stays non-blocking (default 2)
+
+Everything else (base URL, recall limit, prefetch timeout) ships with sane defaults. Self-hosters or tuners can override them by writing `$HERMES_HOME/conport_provider.json` directly (see [Configuration reference](#configuration-reference)).
 
 ### 3. Bind your Hermes profile to a ConPort agent
 
@@ -150,7 +149,7 @@ Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
 ## Status
 
-**Alpha** (v0.1.1). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
+**Alpha** (v0.1.2). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
 
 ## Source
 

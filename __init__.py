@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .cli import register_cli
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 PROVIDER_NAME = "conport"
 DEFAULT_API_BASE = "https://api.conport.app"
@@ -45,31 +45,18 @@ class ConPortMemoryProvider:
         return bool(os.environ.get("CONPORT_API_KEY"))
 
     def get_config_schema(self) -> list[dict[str, Any]]:
+        # Only api_key is user-configurable. Other settings (base URL,
+        # recall limit/timeout) are code defaults and can still be
+        # overridden by hand in $HERMES_HOME/conport_provider.json for
+        # self-hosted instances or tuning, but they don't belong in the
+        # setup wizard.
         return [
             {
                 "key": "api_key",
                 "secret": True,
                 "env_var": "CONPORT_API_KEY",
                 "required": True,
-                "description": "ConPort API key (cport_live_...). Create one in your ConPort dashboard.",
-            },
-            {
-                "key": "api_base_url",
-                "secret": False,
-                "default": DEFAULT_API_BASE,
-                "description": "ConPort API base URL.",
-            },
-            {
-                "key": "recall_limit",
-                "secret": False,
-                "default": 5,
-                "description": "Max memories returned per prefetch.",
-            },
-            {
-                "key": "recall_timeout_seconds",
-                "secret": False,
-                "default": 2,
-                "description": "Hard timeout for prefetch (must stay non-blocking).",
+                "description": "ConPort API key (cport_live_...). Create one at https://conport.app.",
             },
         ]
 
