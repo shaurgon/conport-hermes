@@ -31,6 +31,9 @@ class ConPortMemoryProvider:
         self._session_id: str | None = None
         self._hermes_home: str | None = None
         self._agent_uuid: str | None = None
+        self._agent_context: str = "primary"
+        self._agent_identity: str | None = None
+        self._platform: str | None = None
         self._recall_limit: int = 5
         self._recall_timeout: float = 2.0
 
@@ -77,10 +80,19 @@ class ConPortMemoryProvider:
         path.write_text(json.dumps(non_secret, indent=2))
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
+        """Hermes runtime context arrives via kwargs (run_agent.py:1705).
+
+        We capture: hermes_home (storage scope), agent_context (writes-allowed
+        gate), agent_identity (profile name), platform (origin tag).
+        Other kwargs (user_id, chat_id, ...) are accepted but unused in v0.1.
+        """
         self._session_id = session_id
         self._hermes_home = kwargs.get("hermes_home") or os.environ.get(
             "HERMES_HOME", os.path.expanduser("~/.hermes")
         )
+        self._agent_context = kwargs.get("agent_context") or "primary"
+        self._agent_identity = kwargs.get("agent_identity")
+        self._platform = kwargs.get("platform") or "cli"
 
         api_key = os.environ.get("CONPORT_API_KEY")
         if not api_key:
@@ -161,6 +173,9 @@ class ConPortMemoryProvider:
         return "Relevant ConPort memories:\n" + "\n".join(lines)
 
     def sync_turn(self, user_content: str, assistant_content: str) -> None:
+        # No implicit writes — agent uses explicit conport_remember tool.
+        # If implicit extraction is added later, gate it on
+        # self._agent_context == "primary" (cron/subagent must not write).
         return None
 
     def on_session_end(self, messages: list[dict[str, Any]]) -> None:
