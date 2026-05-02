@@ -150,7 +150,7 @@ Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
 ## Status
 
-**Alpha** (v0.1.0). The package implements the documented Hermes `MemoryProvider` ABC and ConPort REST schema, but real e2e validation in a Hermes profile is task #227. Expect minor field renames as that work surfaces hidden contract details.
+**Alpha** (v0.1.1). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
 
 ## Source
 

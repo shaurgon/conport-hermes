@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .cli import register_cli
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 PROVIDER_NAME = "conport"
 DEFAULT_API_BASE = "https://api.conport.app"

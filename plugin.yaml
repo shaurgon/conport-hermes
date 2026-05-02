@@ -1,14 +1,12 @@
 name: conport-hermes
-version: 0.1.0
+version: 0.1.1
 description: ConPort memory provider — long-term knowledge graph for Hermes Agent.
 author: shaurgon
+pip_dependencies:
+  - "httpx>=0.27"
+  - "pydantic>=2.6"
 hooks:
   - prefetch
   - sync_turn
   - on_session_end
   - shutdown
-requires_env:
-  - name: CONPORT_API_KEY
-    description: ConPort API key (cport_live_...)
-    url: https://conport.app
-    secret: true
