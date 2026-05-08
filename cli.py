@@ -15,32 +15,42 @@ import argparse
 import json
 import os
 import time
+from types import ModuleType
+from typing import TYPE_CHECKING, cast
 
-# Hermes' discover_plugin_cli_commands loads cli.py standalone (no parent
-# package set up), so relative imports fail at argparse-build time. We
-# fall back to importlib loading the sibling files into private locals —
-# crucially WITHOUT modifying sys.path, since polluting sys.path with the
-# plugin directory makes Hermes' `import tools.*` resolve to our tools.py.
-try:
+from .models import IdentityFile, ProviderConfig
+
+if TYPE_CHECKING:
     from .client import ConPortClient
     from .setup_wizard import run_identity_wizard
-except ImportError:
-    import importlib.util
-    from pathlib import Path
+else:
+    # Hermes' discover_plugin_cli_commands loads cli.py standalone (no parent
+    # package set up), so relative imports fail at argparse-build time. Fall
+    # back to importlib loading the sibling files into private locals —
+    # crucially WITHOUT modifying sys.path, since polluting sys.path with the
+    # plugin directory makes Hermes' `import tools.*` resolve to our tools.py.
+    try:
+        from .client import ConPortClient
+        from .setup_wizard import run_identity_wizard
+    except ImportError:
+        import importlib.util
+        from pathlib import Path
 
-    def _load_sibling(name: str):
-        path = Path(__file__).resolve().parent / f"{name}.py"
-        spec = importlib.util.spec_from_file_location(f"_conport_hermes_cli_{name}", str(path))
-        if not spec or not spec.loader:
-            raise ImportError(name)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
+        def _load_sibling(name: str) -> ModuleType:
+            path = Path(__file__).resolve().parent / f"{name}.py"
+            spec = importlib.util.spec_from_file_location(
+                f"_conport_hermes_cli_{name}", str(path)
+            )
+            if not spec or not spec.loader:
+                raise ImportError(name)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
 
-    _client_mod = _load_sibling("client")
-    _setup_mod = _load_sibling("setup_wizard")
-    ConPortClient = _client_mod.ConPortClient  # type: ignore[no-redef]
-    run_identity_wizard = _setup_mod.run_identity_wizard  # type: ignore[no-redef]
+        _client_mod = _load_sibling("client")
+        _setup_mod = _load_sibling("setup_wizard")
+        ConPortClient = _client_mod.ConPortClient
+        run_identity_wizard = _setup_mod.run_identity_wizard
 
 DEFAULT_API_BASE = "https://api.conport.app"
 
@@ -54,9 +64,14 @@ def _api_base() -> str:
     if os.path.exists(p):
         try:
             with open(p) as f:
-                return json.load(f).get("api_base_url", DEFAULT_API_BASE)
+                raw = json.load(f)
         except (OSError, json.JSONDecodeError):
-            pass
+            raw = None
+        if isinstance(raw, dict):
+            cfg = cast(ProviderConfig, raw)
+            value = cfg.get("api_base_url")
+            if isinstance(value, str) and value:
+                return value
     return os.environ.get("CONPORT_API_BASE_URL", DEFAULT_API_BASE)
 
 
@@ -91,8 +106,14 @@ def _client_and_uuid() -> tuple[ConPortClient, str]:
             f"No identity at {identity_file}. Run `hermes conport-hermes init`."
         )
     with open(identity_file) as f:
-        identity = json.load(f)
-    return ConPortClient(base_url=_api_base(), api_key=api_key), identity["agent_uuid"]
+        raw = json.load(f)
+    if not isinstance(raw, dict):
+        raise SystemExit(f"Identity file {identity_file} is not a JSON object.")
+    identity = cast(IdentityFile, raw)
+    agent_uuid = identity.get("agent_uuid")
+    if not isinstance(agent_uuid, str) or not agent_uuid:
+        raise SystemExit(f"Identity file {identity_file} missing agent_uuid.")
+    return ConPortClient(base_url=_api_base(), api_key=api_key), agent_uuid
 
 
 def conport_hermes_command(args: argparse.Namespace) -> None:
@@ -130,12 +151,12 @@ def conport_hermes_command(args: argparse.Namespace) -> None:
                 snippet = (m.get("content") or "")[:120]
                 print(f"#{m.get('id', '?')} ({m.get('memory_type', 'note')}) {snippet}")
         elif sub == "tail":
-            seen: set = set()
+            seen: set[int] = set()
             try:
                 while True:
                     for m in client.list_memories(uuid, limit=args.limit):
                         mid = m.get("id")
-                        if mid is None or mid in seen:
+                        if not isinstance(mid, int) or mid in seen:
                             continue
                         seen.add(mid)
                         snippet = (m.get("content") or "")[:200]

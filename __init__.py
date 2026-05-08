@@ -9,12 +9,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .client import ConPortClient
+from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.10"
+__version__ = "0.1.11"
 
 PROVIDER_NAME = "conport"
 
@@ -178,8 +179,12 @@ class ConPortMemoryProvider:
         except Exception as e:  # noqa: BLE001 — don't crash the wizard
             print(f"  Note: ConPort agent auto-create failed ({e}); run `hermes conport-hermes init`.")
             return
-        identity = {
-            "agent_uuid": agent.get("uuid") or agent.get("agent_uuid"),
+        agent_uuid = agent.get("uuid") or agent.get("agent_uuid")
+        if not agent_uuid:
+            print("  Note: agent response missing uuid; run `hermes conport-hermes init`.")
+            return
+        identity: IdentityFile = {
+            "agent_uuid": agent_uuid,
             "agent_name": agent.get("name", agent_name),
         }
         _save(hermes_home, identity)
@@ -212,16 +217,17 @@ class ConPortMemoryProvider:
         self._client = ConPortClient(base_url=base_url, api_key=api_key)
         self._agent_uuid = self._load_agent_uuid()
 
-    def _load_provider_config(self) -> dict[str, Any]:
+    def _load_provider_config(self) -> ProviderConfig:
         if not self._hermes_home:
             return {}
         p = Path(self._hermes_home) / PROVIDER_CONFIG_FILENAME
         if not p.exists():
             return {}
         try:
-            return json.loads(p.read_text())
+            data = json.loads(p.read_text())
         except (OSError, json.JSONDecodeError):
             return {}
+        return cast(ProviderConfig, data) if isinstance(data, dict) else {}
 
     def _load_agent_uuid(self) -> str | None:
         if not self._hermes_home:
@@ -230,9 +236,14 @@ class ConPortMemoryProvider:
         if not p.exists():
             return None
         try:
-            return json.loads(p.read_text()).get("agent_uuid")
+            data = json.loads(p.read_text())
         except (OSError, json.JSONDecodeError):
             return None
+        if not isinstance(data, dict):
+            return None
+        identity = cast(IdentityFile, data)
+        uuid = identity.get("agent_uuid")
+        return uuid if isinstance(uuid, str) else None
 
     # --- tool surface (per MemoryProvider contract) ---
 
@@ -266,7 +277,7 @@ class ConPortMemoryProvider:
             return None
         return _SYSTEM_PROMPT_BLOCK
 
-    def prefetch(self, query: str) -> str | None:
+    def prefetch(self, query: str, **_kwargs: Any) -> str | None:
         if not (self._client and self._agent_uuid):
             return None
         try:
@@ -285,13 +296,18 @@ class ConPortMemoryProvider:
         ]
         return "Relevant ConPort memories:\n" + "\n".join(lines)
 
-    def sync_turn(self, user_content: str, assistant_content: str) -> None:
-        # No implicit writes — agent uses explicit conport_remember tool.
-        # If implicit extraction is added later, gate it on
-        # self._agent_context == "primary" (cron/subagent must not write).
+    def sync_turn(
+        self,
+        user_content: str,
+        assistant_content: str,
+        **_kwargs: Any,
+    ) -> None:
+        # Accept and ignore extra Hermes runtime kwargs (e.g. session_id
+        # introduced in newer ABC revisions). No implicit writes — agent uses
+        # explicit conport_remember tool.
         return None
 
-    def on_session_end(self, messages: list[dict[str, Any]]) -> None:
+    def on_session_end(self, messages: list[dict[str, Any]], **_kwargs: Any) -> None:
         return None
 
     def shutdown(self) -> None:

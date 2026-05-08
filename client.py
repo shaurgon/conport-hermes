@@ -6,24 +6,40 @@ Endpoints follow https://api.conport.app/openapi.json.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import httpx
 
+from .models import (
+    AgentRecord,
+    MemoryLinkRecord,
+    MemoryRecord,
+    ReflectResult,
+)
 
-def _extract_list(data: Any) -> list[dict[str, Any]]:
+_T = TypeVar("_T")
+
+
+def _extract_list(data: object) -> list[MemoryRecord]:
     """ConPort API wraps lists under `results` (recall) or `memories` (list).
 
     Handles both, plus raw arrays. Empty/missing → [].
     """
     if isinstance(data, list):
-        return data
+        return cast(list[MemoryRecord], data)
     if isinstance(data, dict):
         for key in ("results", "memories", "items"):
             value = data.get(key)
             if isinstance(value, list):
-                return value
+                return cast(list[MemoryRecord], value)
     return []
+
+
+def _as(record_type: type[_T], payload: object) -> _T:
+    """Narrow `r.json()` (Any) to a TypedDict shape — server contract."""
+    if not isinstance(payload, dict):
+        raise TypeError(f"Expected JSON object for {record_type.__name__}, got {type(payload).__name__}")
+    return cast(_T, payload)
 
 
 class ConPortClient:
@@ -33,7 +49,7 @@ class ConPortClient:
             base_url=self.base_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "User-Agent": "conport-hermes/0.1.10",
+                "User-Agent": "conport-hermes/0.1.11",
             },
             timeout=default_timeout,
         )
@@ -43,15 +59,15 @@ class ConPortClient:
 
     # --- agents ---
 
-    def get_agent(self, agent_uuid: str) -> dict[str, Any]:
+    def get_agent(self, agent_uuid: str) -> AgentRecord:
         r = self._client.get(f"/api/v1/agents/{agent_uuid}")
         r.raise_for_status()
-        return r.json()
+        return _as(AgentRecord, r.json())
 
-    def create_agent(self, name: str, *, agent_type: str = "worker") -> dict[str, Any]:
+    def create_agent(self, name: str, *, agent_type: str = "worker") -> AgentRecord:
         r = self._client.post("/api/v1/agents", json={"name": name, "type": agent_type})
         r.raise_for_status()
-        return r.json()
+        return _as(AgentRecord, r.json())
 
     # --- memories ---
 
@@ -64,7 +80,7 @@ class ConPortClient:
         memory_type: str | None = None,
         category: str | None = None,
         timeout: float | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryRecord]:
         params: dict[str, Any] = {"q": query, "limit": limit}
         if memory_type:
             params["memory_type"] = memory_type
@@ -88,7 +104,7 @@ class ConPortClient:
         category: str = "resource",
         entity_ref: str | None = None,
         pinned: bool = False,
-    ) -> dict[str, Any]:
+    ) -> MemoryRecord:
         payload: dict[str, Any] = {
             "content": content,
             "memory_type": memory_type,
@@ -100,7 +116,7 @@ class ConPortClient:
             payload["entity_ref"] = entity_ref
         r = self._client.post(f"/api/v1/agents/{agent_uuid}/memories", json=payload)
         r.raise_for_status()
-        return r.json()
+        return _as(MemoryRecord, r.json())
 
     def forget(
         self, agent_uuid: str, memory_id: int, *, hard_delete: bool = False
@@ -113,21 +129,21 @@ class ConPortClient:
 
     def supersede(
         self, agent_uuid: str, memory_id: int, *, by_memory_id: int
-    ) -> dict[str, Any]:
+    ) -> MemoryRecord:
         r = self._client.post(
             f"/api/v1/agents/{agent_uuid}/memories/{memory_id}/supersede",
             json={"by_memory_id": by_memory_id},
         )
         r.raise_for_status()
-        return r.json()
+        return _as(MemoryRecord, r.json())
 
-    def reflect(self, agent_uuid: str, scope: str = "day") -> dict[str, Any]:
+    def reflect(self, agent_uuid: str, scope: str = "day") -> ReflectResult:
         r = self._client.get(
             f"/api/v1/agents/{agent_uuid}/memories/reflect",
             params={"scope": scope},
         )
         r.raise_for_status()
-        return r.json()
+        return _as(ReflectResult, r.json())
 
     def link_memories(
         self,
@@ -137,7 +153,7 @@ class ConPortClient:
         relation_type: str,
         *,
         similarity_score: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> MemoryLinkRecord:
         payload: dict[str, Any] = {
             "source_memory_id": source_memory_id,
             "target_memory_id": target_memory_id,
@@ -149,7 +165,7 @@ class ConPortClient:
             f"/api/v1/agents/{agent_uuid}/memories/links", json=payload
         )
         r.raise_for_status()
-        return r.json()
+        return _as(MemoryLinkRecord, r.json())
 
     def list_memories(
         self,
@@ -158,7 +174,7 @@ class ConPortClient:
         memory_type: str | None = None,
         category: str | None = None,
         limit: int = 20,
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryRecord]:
         params: dict[str, Any] = {"limit": limit}
         if memory_type:
             params["memory_type"] = memory_type
