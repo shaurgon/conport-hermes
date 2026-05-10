@@ -15,16 +15,18 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.1.11"
+__version__ = "0.2.0"
 
 PROVIDER_NAME = "conport"
 
 
 _SYSTEM_PROMPT_BLOCK = """\
-## ConPort — Persistent Memory
+## ConPort — Persistent Memory & Project Knowledge
 
 ConPort is your long-term knowledge graph. Identity is already bound to this
-profile; recall is auto-injected before every turn.
+profile; recall is auto-injected before every turn. You also have project-level
+tools (search, tasks, decisions, progress, documents) — call
+`conport_attach_project(name=...)` once to scope them.
 
 ### NEVER store
 - Secrets, passwords, API keys, tokens — even partially.
@@ -86,6 +88,36 @@ profile; recall is auto-injected before every turn.
 - No secrets in memory content?
 - Outdated memories superseded or forgotten?
 - `conport_reflect(scope="day")` at end of session for consolidation?
+
+## Project tools (after `conport_attach_project`)
+
+| Trigger | Action |
+|---------|--------|
+| Question about a project | `conport_search(query=..., item_types?=..., tags?=...)` BEFORE answering |
+| New task | `conport_add_task(title, description?, priority?, parent_task_id?)` |
+| Start work | `conport_update_task(task_id, status="IN_PROGRESS")` |
+| Finish work | `conport_update_task(task_id, status="DONE", resolution="...")` (auto-logs progress) |
+| Standalone progress (not a task close) | `conport_log_progress(description, title?, linked_item_type?, linked_item_id?)` |
+| Architectural choice | `conport_sync_decision(summary, rationale?, tags?)` |
+| Read a doc | `conport_get_document(document_id)` |
+| Browse docs | `conport_list_documents(doc_type?)` |
+| Write a new spec/runbook | `conport_add_document(title, content, doc_type?, tags?)` |
+| Edit a doc (body or metadata) | `conport_update_document(document_id, operations?=[...], title?=...)` |
+
+Documents anti-pattern: don't `conport_add_document` a meta-doc that comments
+on another doc — `conport_update_document` the original (or write an addendum
+with a `> [!extends] [[doc-N]]` callout linking it back). Search first.
+
+Patch operations (for `conport_update_document`):
+- `{op:'set_content', content}` — replace whole body
+- `{op:'replace_section_body', heading:'## API', content}` — rewrite a section
+- `{op:'append_to_section', heading, content}` — append to section body
+- `{op:'insert_section_after', heading, content}` — insert markdown after a section
+- `{op:'delete_section', heading}` — delete a section (and its subsections)
+- `{op:'find_replace', find, replace, replace_all?}` — literal find/replace
+
+Closing a task: pass `resolution=...` — server creates the linked progress
+entry. Do NOT call `conport_log_progress` separately for task closes.
 """
 
 
@@ -120,6 +152,8 @@ class ConPortMemoryProvider:
         self._platform: str | None = None
         self._recall_limit: int = 5
         self._recall_timeout: float = 2.0
+        self._project_id: int | None = None
+        self._project_name: str | None = None
 
     @property
     def name(self) -> str:
@@ -266,8 +300,37 @@ class ConPortMemoryProvider:
                 },
                 ensure_ascii=False,
             )
+        if name == "conport_attach_project":
+            return self._handle_attach_project(args)
         return dispatch_tool(
-            tool_name=name, args=args, client=self._client, agent_uuid=self._agent_uuid
+            tool_name=name,
+            args=args,
+            client=self._client,
+            agent_uuid=self._agent_uuid,
+            project_id=self._project_id,
+        )
+
+    def _handle_attach_project(self, args: dict[str, Any]) -> str:
+        identifier = args.get("name")
+        if not identifier:
+            return json.dumps({"error": "missing required argument: name"})
+        assert self._client is not None  # checked in handle_tool_call
+        try:
+            project = self._client.get_project(identifier)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"error": f"failed to attach project: {exc}"})
+        project_id = project.get("id")
+        project_name = project.get("name")
+        if not isinstance(project_id, int):
+            return json.dumps({"error": "project response missing numeric id"})
+        self._project_id = project_id
+        self._project_name = project_name if isinstance(project_name, str) else None
+        return json.dumps(
+            {
+                "ok": True,
+                "project_id": project_id,
+                "project_name": self._project_name,
+            }
         )
 
     # --- optional hooks ---

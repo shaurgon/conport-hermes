@@ -50,3 +50,65 @@ class ProviderConfig(TypedDict, total=False):
 class IdentityFile(TypedDict, total=False):
     agent_uuid: str
     agent_name: str
+
+
+class ProjectRecord(TypedDict, total=False):
+    id: int
+    name: str
+    description: str
+    created_at: str
+    updated_at: str
+
+
+class TaskRecord(TypedDict, total=False):
+    id: int
+    project_id: int
+    title: str
+    description: str
+    status: str
+    priority: int
+    parent_task_id: int
+    created_at: str
+    updated_at: str
+
+
+class DecisionRecord(TypedDict, total=False):
+    id: int
+    project_id: int
+    summary: str
+    rationale: str
+    tags: list[str]
+    created_at: str
+
+
+class ProgressRecord(TypedDict, total=False):
+    id: int
+    project_id: int
+    title: str
+    description: str
+    parent_id: int
+    linked_item_type: str
+    linked_item_id: int
+    created_at: str
+
+
+class DocumentRecord(TypedDict, total=False):
+    id: int
+    project_id: int
+    title: str
+    content: str
+    doc_type: str
+    tags: list[str]
+    version: int
+    created_at: str
+    updated_at: str
+
+
+class SearchResultRecord(TypedDict, total=False):
+    item_type: str
+    item_id: int
+    project_id: int
+    project_name: str
+    score: float
+    content: dict[str, object]
+    created_at: str

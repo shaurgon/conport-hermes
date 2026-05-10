@@ -12,9 +12,15 @@ import httpx
 
 from .models import (
     AgentRecord,
+    DecisionRecord,
+    DocumentRecord,
     MemoryLinkRecord,
     MemoryRecord,
+    ProgressRecord,
+    ProjectRecord,
     ReflectResult,
+    SearchResultRecord,
+    TaskRecord,
 )
 
 _T = TypeVar("_T")
@@ -35,6 +41,16 @@ def _extract_list(data: object) -> list[MemoryRecord]:
     return []
 
 
+def _extract_named_list(data: object, key: str) -> list[Any]:
+    if isinstance(data, list):
+        return list(data)
+    if isinstance(data, dict):
+        value = data.get(key)
+        if isinstance(value, list):
+            return list(value)
+    return []
+
+
 def _as(record_type: type[_T], payload: object) -> _T:
     """Narrow `r.json()` (Any) to a TypedDict shape — server contract."""
     if not isinstance(payload, dict):
@@ -49,7 +65,7 @@ class ConPortClient:
             base_url=self.base_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "User-Agent": "conport-hermes/0.1.11",
+                "User-Agent": "conport-hermes/0.2.0",
             },
             timeout=default_timeout,
         )
@@ -183,3 +199,235 @@ class ConPortClient:
         r = self._client.get(f"/api/v1/agents/{agent_uuid}/memories", params=params)
         r.raise_for_status()
         return _extract_list(r.json())
+
+    # --- projects ---
+
+    def get_project(self, identifier: str | int) -> ProjectRecord:
+        r = self._client.get(f"/api/v1/projects/{identifier}")
+        r.raise_for_status()
+        return _as(ProjectRecord, r.json())
+
+    # --- search ---
+
+    def search(
+        self,
+        query: str,
+        *,
+        project_id: int | None = None,
+        limit: int = 20,
+        item_types: list[str] | None = None,
+        tags: list[str] | None = None,
+    ) -> list[SearchResultRecord]:
+        payload: dict[str, Any] = {"query": query, "limit": limit}
+        if project_id is not None:
+            payload["project_id"] = project_id
+        if item_types:
+            payload["item_types"] = item_types
+        if tags:
+            payload["tags"] = tags
+        r = self._client.post("/api/v1/search", json=payload)
+        r.raise_for_status()
+        return cast(list[SearchResultRecord], _extract_named_list(r.json(), "results"))
+
+    # --- tasks ---
+
+    def create_task(
+        self,
+        project_id: int,
+        *,
+        title: str,
+        description: str | None = None,
+        status: str = "TODO",
+        priority: int = 3,
+        parent_task_id: int | None = None,
+    ) -> TaskRecord:
+        payload: dict[str, Any] = {
+            "title": title,
+            "status": status,
+            "priority": priority,
+        }
+        if description is not None:
+            payload["description"] = description
+        if parent_task_id is not None:
+            payload["parent_task_id"] = parent_task_id
+        r = self._client.post(f"/api/v1/projects/{project_id}/tasks", json=payload)
+        r.raise_for_status()
+        return _as(TaskRecord, r.json())
+
+    def update_task(
+        self,
+        project_id: int,
+        task_id: int,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        status: str | None = None,
+        priority: int | None = None,
+        parent_task_id: int | None = None,
+        resolution: str | None = None,
+    ) -> TaskRecord:
+        payload: dict[str, Any] = {}
+        if title is not None:
+            payload["title"] = title
+        if description is not None:
+            payload["description"] = description
+        if status is not None:
+            payload["status"] = status
+        if priority is not None:
+            payload["priority"] = priority
+        if parent_task_id is not None:
+            payload["parent_task_id"] = parent_task_id
+        if resolution is not None:
+            payload["resolution"] = resolution
+        r = self._client.put(f"/api/v1/projects/{project_id}/tasks/{task_id}", json=payload)
+        r.raise_for_status()
+        return _as(TaskRecord, r.json())
+
+    def list_tasks(
+        self,
+        project_id: int,
+        *,
+        status: str = "TODO,IN_PROGRESS",
+        priority: int | None = None,
+        limit: int = 50,
+    ) -> list[TaskRecord]:
+        params: dict[str, Any] = {"status": status, "limit": limit}
+        if priority is not None:
+            params["priority"] = priority
+        r = self._client.get(f"/api/v1/projects/{project_id}/tasks", params=params)
+        r.raise_for_status()
+        return cast(list[TaskRecord], _extract_named_list(r.json(), "tasks"))
+
+    # --- decisions ---
+
+    def create_decision(
+        self,
+        project_id: int,
+        *,
+        summary: str,
+        rationale: str | None = None,
+        tags: list[str] | None = None,
+    ) -> DecisionRecord:
+        payload: dict[str, Any] = {"summary": summary, "tags": tags or []}
+        if rationale is not None:
+            payload["rationale"] = rationale
+        r = self._client.post(f"/api/v1/projects/{project_id}/decisions", json=payload)
+        r.raise_for_status()
+        return _as(DecisionRecord, r.json())
+
+    # --- progress ---
+
+    def create_progress(
+        self,
+        project_id: int,
+        *,
+        description: str,
+        title: str | None = None,
+        parent_id: int | None = None,
+        linked_item_type: str | None = None,
+        linked_item_id: int | None = None,
+    ) -> ProgressRecord:
+        payload: dict[str, Any] = {"description": description}
+        if title is not None:
+            payload["title"] = title
+        if parent_id is not None:
+            payload["parent_id"] = parent_id
+        if linked_item_type is not None:
+            payload["linked_item_type"] = linked_item_type
+        if linked_item_id is not None:
+            payload["linked_item_id"] = linked_item_id
+        r = self._client.post(f"/api/v1/projects/{project_id}/progress", json=payload)
+        r.raise_for_status()
+        return _as(ProgressRecord, r.json())
+
+    # --- documents ---
+
+    def get_document(
+        self, project_id: int, document_id: int, *, raw: bool = False
+    ) -> DocumentRecord:
+        params = {"raw": "true"} if raw else {}
+        r = self._client.get(
+            f"/api/v1/projects/{project_id}/documents/{document_id}", params=params
+        )
+        r.raise_for_status()
+        return _as(DocumentRecord, r.json())
+
+    def list_documents(
+        self,
+        project_id: int,
+        *,
+        doc_type: str | None = None,
+        limit: int = 50,
+    ) -> list[DocumentRecord]:
+        params: dict[str, Any] = {"limit": limit}
+        if doc_type:
+            params["doc_type"] = doc_type
+        r = self._client.get(f"/api/v1/projects/{project_id}/documents", params=params)
+        r.raise_for_status()
+        return cast(list[DocumentRecord], _extract_named_list(r.json(), "documents"))
+
+    def create_document(
+        self,
+        project_id: int,
+        *,
+        title: str,
+        content: str,
+        doc_type: str = "spec",
+        parent_document_id: int | None = None,
+        author: str | None = None,
+        external_url: str | None = None,
+        tags: list[str] | None = None,
+    ) -> DocumentRecord:
+        payload: dict[str, Any] = {
+            "title": title,
+            "content": content,
+            "doc_type": doc_type,
+            "tags": tags or [],
+        }
+        if parent_document_id is not None:
+            payload["parent_document_id"] = parent_document_id
+        if author is not None:
+            payload["author"] = author
+        if external_url is not None:
+            payload["external_url"] = external_url
+        r = self._client.post(f"/api/v1/projects/{project_id}/documents", json=payload)
+        r.raise_for_status()
+        return _as(DocumentRecord, r.json())
+
+    def update_document(
+        self,
+        project_id: int,
+        document_id: int,
+        *,
+        title: str | None = None,
+        operations: list[dict[str, Any]] | None = None,
+        doc_type: str | None = None,
+        parent_document_id: int | None = None,
+        author: str | None = None,
+        external_url: str | None = None,
+        tags: list[str] | None = None,
+        status: str | None = None,
+        create_new_version: bool = True,
+    ) -> DocumentRecord:
+        payload: dict[str, Any] = {"create_new_version": create_new_version}
+        if title is not None:
+            payload["title"] = title
+        if operations is not None:
+            payload["operations"] = operations
+        if doc_type is not None:
+            payload["doc_type"] = doc_type
+        if parent_document_id is not None:
+            payload["parent_document_id"] = parent_document_id
+        if author is not None:
+            payload["author"] = author
+        if external_url is not None:
+            payload["external_url"] = external_url
+        if tags is not None:
+            payload["tags"] = tags
+        if status is not None:
+            payload["status"] = status
+        r = self._client.put(
+            f"/api/v1/projects/{project_id}/documents/{document_id}", json=payload
+        )
+        r.raise_for_status()
+        return _as(DocumentRecord, r.json())

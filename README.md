@@ -13,7 +13,8 @@ A default ConPort agent is auto-created and bound to your Hermes profile in one 
 
 - **Cross-session memory** backed by ConPort's knowledge graph
 - **Auto-recall** injected before every turn (non-blocking, 2-second budget)
-- **Five tools** the agent can call: `conport_remember`, `conport_recall`, `conport_forget`, `conport_reflect`, `conport_link_memories`
+- **Agent-memory tools (5):** `conport_remember`, `conport_recall`, `conport_forget`, `conport_reflect`, `conport_link_memories`
+- **Project tools (11, v0.2):** `conport_attach_project` + `search`, `add_task`, `update_task`, `list_tasks`, `sync_decision`, `log_progress`, `get_document`, `list_documents`, `add_document`, `update_document` — agent works with project tasks/decisions/docs without standing up a separate MCP client
 - **Reflection** — dedup, supersede stale memories, surface patterns
 - **CLI** — `hermes conport-hermes status | agent | memories | reflect | tail | init`
 
@@ -80,6 +81,8 @@ Non-secret config is stored at `$HERMES_HOME/conport_provider.json`. The API key
 
 ## Tool reference
 
+### Agent memory
+
 | Tool | Purpose | Prompts that trigger it |
 |------|---------|-------------------------|
 | `conport_remember` | Persist a durable fact, decision, lesson, or pattern | "Remember that…", "Save this decision…", "Note for future me…" |
@@ -87,6 +90,67 @@ Non-secret config is stored at `$HERMES_HOME/conport_provider.json`. The API key
 | `conport_forget` | Soft-delete (or hard-delete) a memory by id | "Forget memory #42", "That note was wrong, remove it" |
 | `conport_reflect` | Trigger consolidation: dedup, supersede stale, surface patterns | "Reflect on the last week", "Consolidate today's memories" |
 | `conport_link_memories` | Connect two memories with a typed relation | Used implicitly by reflect; agents can also call directly |
+
+### Project tools (v0.2)
+
+Agent memory is per-agent; project tools work against a shared knowledge base
+(tasks, decisions, documents, progress) scoped to a single ConPort project.
+Call `conport_attach_project(name="my-project")` once per session before any
+project tool — scope persists in-process for the rest of the Hermes session.
+
+| Tool | Purpose |
+|------|---------|
+| `conport_attach_project` | Resolve a project by name (or numeric id) and bind to it |
+| `conport_search` | Hybrid semantic + FTS search across the attached project |
+| `conport_add_task` | Create a task (title, description, priority, parent) |
+| `conport_update_task` | Update a task; pass `resolution` on `status=DONE/CANCELLED` to record verdict + auto-log progress |
+| `conport_list_tasks` | List tasks with status/priority filters |
+| `conport_sync_decision` | Record an architectural decision with rationale and tags |
+| `conport_log_progress` | Standalone progress entry (NOT for task closes — those auto-log) |
+| `conport_get_document` | Fetch a document by per-project document_id |
+| `conport_list_documents` | List documents (filter by `doc_type` optional) |
+| `conport_add_document` | Create a new document (search first to avoid duplicates) |
+| `conport_update_document` | Update a document; body via `operations` (surgical patch list), metadata otherwise |
+
+Example flow:
+
+```
+> Attach to project "conport-global", then summarise open tasks
+[agent calls conport_attach_project(name="conport-global")]
+[agent calls conport_list_tasks()]
+[agent answers from results]
+
+> Mark task #291 as done — resolution: shipped v0.2
+[agent calls conport_update_task(task_id=291, status="DONE", resolution="shipped v0.2")]
+```
+
+Closing tasks: pass `resolution=...` — the server upserts a `## Resolution`
+section into the task description AND creates a linked progress entry.
+Do NOT call `conport_log_progress` separately for task closes.
+
+#### Document patching
+
+`conport_update_document` body edits use a list of typed `operations`:
+
+| op | Args |
+|----|------|
+| `set_content` | `content` — replace whole body |
+| `replace_section_body` | `heading` (e.g. `'## API'` or `'## A > ### B'`), `content` |
+| `append_to_section` | `heading`, `content` (appended before first subsection) |
+| `insert_section_after` | `heading`, `content` (markdown block inserted after section) |
+| `delete_section` | `heading` (deletes section + all subsections) |
+| `find_replace` | `find`, `replace`, `replace_all?` |
+
+By default, every body update snapshots the previous version (a new row with
+`is_current=false`) and bumps the `version` of the canonical row — so
+incoming wikilinks and other cross-document references stay valid. Pass
+`create_new_version=false` to skip the snapshot in bulk patch loops.
+
+Anti-pattern: if you find yourself about to `conport_add_document` a doc that
+*comments on*, *amends*, or *FAQ-answers* an existing one, don't.
+`conport_update_document` the original via `replace_section_body` /
+`append_to_section`, or create an addendum that links back via a
+`> [!extends] [[doc-N]]` callout in its body.
 
 ### Memory shape
 
