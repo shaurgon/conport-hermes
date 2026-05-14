@@ -313,8 +313,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "conport_update_document",
         "description": (
-            "Update a document. Body edits go through `operations` (surgical patch list); "
-            "metadata fields (title, doc_type, tags, ...) can be updated without operations. "
+            "Update a document. Pass content=<full markdown> to replace the body; "
+            "metadata fields (title, doc_type, tags, ...) can be updated without content. "
             "Default: snapshots the previous version (document_id stays stable). Pass "
             "create_new_version=false to skip the snapshot for bulk patch loops."
         ),
@@ -323,10 +323,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "properties": {
                 "document_id": {"type": "integer"},
                 "title": {"type": "string"},
-                "operations": {
-                    "type": "array",
-                    "description": DOC_PATCH_OPS_HELP,
-                    "items": {"type": "object"},
+                "content": {
+                    "type": "string",
+                    "description": "Full markdown body — replaces the document content.",
                 },
                 "doc_type": {"type": "string", "enum": list(DOC_TYPES)},
                 "parent_document_id": {"type": "integer"},
@@ -337,6 +336,67 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "create_new_version": {"type": "boolean", "default": True},
             },
             "required": ["document_id"],
+        },
+    },
+    {
+        "name": "conport_get_block",
+        "description": "Read one block by ULID from a document.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "integer"},
+                "block_ulid": {"type": "string", "description": "Block ULID."},
+            },
+            "required": ["document_id", "block_ulid"],
+        },
+    },
+    {
+        "name": "conport_update_block",
+        "description": (
+            "Replace one block's markdown without touching the surrounding document. "
+            "Use this for surgical edits — beats conport_update_document(content=...) "
+            "for single-block changes because it doesn't re-embed every block."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "integer"},
+                "block_ulid": {"type": "string"},
+                "markdown": {
+                    "type": "string",
+                    "description": "New markdown text for this block.",
+                },
+            },
+            "required": ["document_id", "block_ulid", "markdown"],
+        },
+    },
+    {
+        "name": "conport_insert_block",
+        "description": (
+            "Insert a new block into a document. Pass after=<ulid> or before=<ulid> "
+            "to position; omit both to append at the end."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "integer"},
+                "markdown": {"type": "string"},
+                "after": {"type": "string", "description": "ULID to insert after (mutually exclusive with before)."},
+                "before": {"type": "string", "description": "ULID to insert before (mutually exclusive with after)."},
+            },
+            "required": ["document_id", "markdown"],
+        },
+    },
+    {
+        "name": "conport_delete_block",
+        "description": "Delete one block by ULID. Returns 404 if the block doesn't exist.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "integer"},
+                "block_ulid": {"type": "string"},
+            },
+            "required": ["document_id", "block_ulid"],
         },
     },
 ]
@@ -492,7 +552,7 @@ def _do_dispatch(
             project_id=_require_project(project_id),
             document_id=args["document_id"],
             title=args.get("title"),
-            operations=args.get("operations"),
+            content=args.get("content"),
             doc_type=args.get("doc_type"),
             parent_document_id=args.get("parent_document_id"),
             author=args.get("author"),
@@ -501,4 +561,32 @@ def _do_dispatch(
             status=args.get("status"),
             create_new_version=args.get("create_new_version", True),
         )
+    if tool_name == "conport_get_block":
+        return client.get_block(
+            project_id=_require_project(project_id),
+            document_id=args["document_id"],
+            block_ulid=args["block_ulid"],
+        )
+    if tool_name == "conport_update_block":
+        return client.update_block(
+            project_id=_require_project(project_id),
+            document_id=args["document_id"],
+            block_ulid=args["block_ulid"],
+            markdown=args["markdown"],
+        )
+    if tool_name == "conport_insert_block":
+        return client.insert_block(
+            project_id=_require_project(project_id),
+            document_id=args["document_id"],
+            markdown=args["markdown"],
+            after=args.get("after"),
+            before=args.get("before"),
+        )
+    if tool_name == "conport_delete_block":
+        client.delete_block(
+            project_id=_require_project(project_id),
+            document_id=args["document_id"],
+            block_ulid=args["block_ulid"],
+        )
+        return {"deleted": True}
     raise ValueError(f"Unknown tool: {tool_name}")

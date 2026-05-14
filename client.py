@@ -65,7 +65,7 @@ class ConPortClient:
             base_url=self.base_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "User-Agent": "conport-hermes/0.2.0",
+                "User-Agent": "conport-hermes/0.3.0",
             },
             timeout=default_timeout,
         )
@@ -400,7 +400,7 @@ class ConPortClient:
         document_id: int,
         *,
         title: str | None = None,
-        operations: list[dict[str, Any]] | None = None,
+        content: str | None = None,
         doc_type: str | None = None,
         parent_document_id: int | None = None,
         author: str | None = None,
@@ -412,8 +412,8 @@ class ConPortClient:
         payload: dict[str, Any] = {"create_new_version": create_new_version}
         if title is not None:
             payload["title"] = title
-        if operations is not None:
-            payload["operations"] = operations
+        if content is not None:
+            payload["content"] = content
         if doc_type is not None:
             payload["doc_type"] = doc_type
         if parent_document_id is not None:
@@ -431,3 +431,59 @@ class ConPortClient:
         )
         r.raise_for_status()
         return _as(DocumentRecord, r.json())
+
+    # --- document blocks ---
+
+    def get_block(
+        self, project_id: int, document_id: int, block_ulid: str,
+    ) -> dict[str, Any]:
+        """Read a single block by ULID."""
+        r = self._client.get(
+            f"/api/v1/projects/{project_id}/documents/{document_id}/blocks/{block_ulid}"
+        )
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
+
+    def update_block(
+        self, project_id: int, document_id: int, block_ulid: str, markdown: str,
+    ) -> dict[str, Any]:
+        """Replace one block's markdown."""
+        r = self._client.patch(
+            f"/api/v1/projects/{project_id}/documents/{document_id}/blocks/{block_ulid}",
+            json={"markdown": markdown},
+        )
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
+
+    def insert_block(
+        self,
+        project_id: int,
+        document_id: int,
+        markdown: str,
+        *,
+        after: str | None = None,
+        before: str | None = None,
+    ) -> dict[str, Any]:
+        """Insert a block. Pass after=<ulid> or before=<ulid> to position; default appends to end."""
+        if after is not None and before is not None:
+            raise ValueError("insert_block: pass at most one of after= or before=")
+        payload: dict[str, Any] = {"markdown": markdown}
+        if after is not None:
+            payload["after"] = after
+        if before is not None:
+            payload["before"] = before
+        r = self._client.post(
+            f"/api/v1/projects/{project_id}/documents/{document_id}/blocks",
+            json=payload,
+        )
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
+
+    def delete_block(
+        self, project_id: int, document_id: int, block_ulid: str,
+    ) -> None:
+        """Delete one block. Idempotent."""
+        r = self._client.delete(
+            f"/api/v1/projects/{project_id}/documents/{document_id}/blocks/{block_ulid}"
+        )
+        r.raise_for_status()

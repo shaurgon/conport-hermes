@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 PROVIDER_NAME = "conport"
 
@@ -102,19 +102,19 @@ tools (search, tasks, decisions, progress, documents) — call
 | Read a doc | `conport_get_document(document_id)` |
 | Browse docs | `conport_list_documents(doc_type?)` |
 | Write a new spec/runbook | `conport_add_document(title, content, doc_type?, tags?)` |
-| Edit a doc (body or metadata) | `conport_update_document(document_id, operations?=[...], title?=...)` |
+| Edit a doc (body or metadata) | `conport_update_document(document_id, content=<full markdown>, title?=...)` |
+| Read a single block | `conport_get_block(document_id, block_ulid)` |
+| Edit one block (surgical, fast) | `conport_update_block(document_id, block_ulid, markdown)` |
+| Insert a block | `conport_insert_block(document_id, markdown, after?\\|before?)` |
+| Delete a block | `conport_delete_block(document_id, block_ulid)` |
 
 Documents anti-pattern: don't `conport_add_document` a meta-doc that comments
 on another doc — `conport_update_document` the original (or write an addendum
 with a `> [!extends] [[doc-N]]` callout linking it back). Search first.
 
-Patch operations (for `conport_update_document`):
-- `{op:'set_content', content}` — replace whole body
-- `{op:'replace_section_body', heading:'## API', content}` — rewrite a section
-- `{op:'append_to_section', heading, content}` — append to section body
-- `{op:'insert_section_after', heading, content}` — insert markdown after a section
-- `{op:'delete_section', heading}` — delete a section (and its subsections)
-- `{op:'find_replace', find, replace, replace_all?}` — literal find/replace
+Block-level editing: prefer `conport_update_block` for one-block edits — it
+re-embeds only that block. Use `conport_update_document(content=...)` only
+when you're replacing the whole document body.
 
 Closing a task: pass `resolution=...` — server creates the linked progress
 entry. Do NOT call `conport_log_progress` separately for task closes.
