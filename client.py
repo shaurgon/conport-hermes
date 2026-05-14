@@ -407,9 +407,8 @@ class ConPortClient:
         external_url: str | None = None,
         tags: list[str] | None = None,
         status: str | None = None,
-        create_new_version: bool = True,
     ) -> DocumentRecord:
-        payload: dict[str, Any] = {"create_new_version": create_new_version}
+        payload: dict[str, Any] = {}
         if title is not None:
             payload["title"] = title
         if content is not None:

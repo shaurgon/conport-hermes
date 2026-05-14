@@ -110,7 +110,8 @@ project tool — scope persists in-process for the rest of the Hermes session.
 | `conport_get_document` | Fetch a document by per-project document_id |
 | `conport_list_documents` | List documents (filter by `doc_type` optional) |
 | `conport_add_document` | Create a new document (search first to avoid duplicates) |
-| `conport_update_document` | Update a document; body via `operations` (surgical patch list), metadata otherwise |
+| `conport_update_document` | Update a document body (`content=<markdown>` — block reconciliation diffs against existing blocks) and/or metadata. For single-block surgical edits use `conport_update_block`. |
+| `conport_get_block` / `conport_update_block` / `conport_insert_block` / `conport_delete_block` | Per-block CRUD — surgical edits that re-embed only the touched block instead of the whole document. |
 
 Example flow:
 
@@ -128,29 +129,22 @@ Closing tasks: pass `resolution=...` — the server upserts a `## Resolution`
 section into the task description AND creates a linked progress entry.
 Do NOT call `conport_log_progress` separately for task closes.
 
-#### Document patching
+#### Document editing
 
-`conport_update_document` body edits use a list of typed `operations`:
+Documents are stored as ordered blocks (headings, paragraphs, code, lists,
+tables) with stable ULIDs and per-block embeddings. Two surfaces:
 
-| op | Args |
-|----|------|
-| `set_content` | `content` — replace whole body |
-| `replace_section_body` | `heading` (e.g. `'## API'` or `'## A > ### B'`), `content` |
-| `append_to_section` | `heading`, `content` (appended before first subsection) |
-| `insert_section_after` | `heading`, `content` (markdown block inserted after section) |
-| `delete_section` | `heading` (deletes section + all subsections) |
-| `find_replace` | `find`, `replace`, `replace_all?` |
+- **Whole-document replace** — `conport_update_document(document_id=N, content="...")`. The server parses the new markdown into blocks and reconciles against the existing ones: unchanged blocks keep their ULIDs (and embeddings, and entity mentions), changed blocks get re-embedded, deleted blocks are dropped. Use this for major rewrites where many blocks change at once.
+- **Per-block surgical edits** — `conport_update_block(document_id, block_ulid, markdown)`, `conport_insert_block(document_id, markdown, after=<ulid>)`, `conport_delete_block(document_id, block_ulid)`. Use these for single-paragraph fixes — only the touched block re-embeds, drift detection runs against just that block.
 
-By default, every body update snapshots the previous version (a new row with
-`is_current=false`) and bumps the `version` of the canonical row — so
-incoming wikilinks and other cross-document references stay valid. Pass
-`create_new_version=false` to skip the snapshot in bulk patch loops.
+To find the block ULID of the paragraph you want to edit, call
+`conport_list_blocks(document_id)` and pick the right one by its `text`.
 
 Anti-pattern: if you find yourself about to `conport_add_document` a doc that
-*comments on*, *amends*, or *FAQ-answers* an existing one, don't.
-`conport_update_document` the original via `replace_section_body` /
-`append_to_section`, or create an addendum that links back via a
-`> [!extends] [[doc-N]]` callout in its body.
+*comments on*, *amends*, or *FAQ-answers* an existing one, don't. Use
+`conport_update_block` / `conport_insert_block` on the relevant block of the
+original, or create an addendum that links back via a `> [!extends] [[doc-N]]`
+callout in its body.
 
 ### Memory shape
 

@@ -313,10 +313,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "conport_update_document",
         "description": (
-            "Update a document. Pass content=<full markdown> to replace the body; "
-            "metadata fields (title, doc_type, tags, ...) can be updated without content. "
-            "Default: snapshots the previous version (document_id stays stable). Pass "
-            "create_new_version=false to skip the snapshot for bulk patch loops."
+            "Update a document. Pass content=<full markdown> to replace the body — "
+            "the block reconciliation engine keeps unchanged blocks (and their "
+            "embeddings/entity mentions), re-embeds dirty blocks, drops removed "
+            "ones. Metadata fields (title, doc_type, tags, ...) can be updated "
+            "without content. For single-block surgical edits, prefer "
+            "conport_update_block (skips the document-wide reconcile)."
         ),
         "parameters": {
             "type": "object",
@@ -333,7 +335,6 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "external_url": {"type": "string"},
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "status": {"type": "string", "enum": list(DOC_STATUSES)},
-                "create_new_version": {"type": "boolean", "default": True},
             },
             "required": ["document_id"],
         },
@@ -559,7 +560,6 @@ def _do_dispatch(
             external_url=args.get("external_url"),
             tags=args.get("tags"),
             status=args.get("status"),
-            create_new_version=args.get("create_new_version", True),
         )
     if tool_name == "conport_get_block":
         return client.get_block(
