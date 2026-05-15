@@ -121,7 +121,7 @@ Example flow:
 [agent calls conport_list_tasks()]
 [agent answers from results]
 
-> Mark task #291 as done — resolution: shipped v0.2
+> Mark task-291 as done — resolution: shipped v0.2
 [agent calls conport_update_task(task_id=291, status="DONE", resolution="shipped v0.2")]
 ```
 
