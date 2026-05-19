@@ -52,7 +52,12 @@ NO_PROJECT_ERROR = "no project attached — call conport_attach_project(name=...
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "conport_remember",
-        "description": "Persist something durable: a decision, lesson, fact, or pattern.",
+        "description": (
+            "Persist something durable: a decision, lesson, fact, or pattern. "
+            "Defaults to scoping the memory to the currently attached project (so "
+            "another project's recall won't surface it). Pass scope='global' for "
+            "cross-project memories (identity, principles, person-knowledge)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -70,13 +75,29 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "entity_ref": {"type": "string", "description": "Canonical entity name to link"},
                 "pinned": {"type": "boolean", "default": False},
+                "scope": {
+                    "type": "string",
+                    "enum": ["project", "global"],
+                    "default": "project",
+                    "description": (
+                        "'project' (default) — memory scoped to the attached project, "
+                        "invisible from other projects' recalls. 'global' — agent-wide, "
+                        "visible from every project (use for identity / principles / "
+                        "cross-cutting feedback only)."
+                    ),
+                },
             },
             "required": ["content"],
         },
     },
     {
         "name": "conport_recall",
-        "description": "Search prior memories with semantic + decay-aware scoring.",
+        "description": (
+            "Search prior memories with semantic + decay-aware scoring. By default "
+            "returns only memories from the attached project + agent-global ones — "
+            "never leaks content from other attached projects. Use scope='all' for "
+            "cross-project audit."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -84,6 +105,16 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
                 "memory_type": {"type": "string", "enum": list(MEMORY_TYPES)},
                 "category": {"type": "string", "enum": list(PARA_CATEGORIES)},
+                "scope": {
+                    "type": "string",
+                    "enum": ["project", "all"],
+                    "default": "project",
+                    "description": (
+                        "'project' (default, safe) — recall only sees the attached "
+                        "project + global rows. 'all' — full cross-project scan (audit "
+                        "only; do not pipe into add_task / log_progress)."
+                    ),
+                },
             },
             "required": ["query"],
         },
@@ -102,7 +133,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "conport_reflect",
-        "description": "Trigger reflection/synthesis: dedup, supersede, surface patterns. Scope: day, week, full.",
+        "description": (
+            "Trigger reflection/synthesis: dedup, supersede, surface patterns. "
+            "Defaults to project-scoped — operates only on the attached project + "
+            "agent-global memories. Use project_scope='all' for cross-project audit."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -110,6 +145,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "type": "string",
                     "enum": ["day", "week", "full"],
                     "default": "day",
+                },
+                "project_scope": {
+                    "type": "string",
+                    "enum": ["project", "all"],
+                    "default": "project",
+                    "description": (
+                        "'project' (default) — reflect over attached project + global. "
+                        "'all' — every project the agent has memories in."
+                    ),
                 },
             },
         },
@@ -438,7 +482,12 @@ def _do_dispatch(
     project_id: int | None,
 ) -> Any:
     # --- agent memory ---
+    # Memory scoping (task-331): by default, scope reads/writes to the
+    # attached project so a multi-project agent can't leak content across
+    # projects. Agent can opt out via scope='global'/'all'.
     if tool_name == "conport_remember":
+        write_scope = args.get("scope", "project")
+        scoped_project_id = project_id if write_scope == "project" else None
         return client.remember(
             agent_uuid=agent_uuid,
             content=args["content"],
@@ -447,14 +496,18 @@ def _do_dispatch(
             tags=args.get("tags"),
             entity_ref=args.get("entity_ref"),
             pinned=args.get("pinned", False),
+            project_id=scoped_project_id,
         )
     if tool_name == "conport_recall":
+        read_scope = args.get("scope", "project")
+        scoped_project_id = project_id if read_scope == "project" else None
         return client.recall(
             agent_uuid=agent_uuid,
             query=args["query"],
             limit=args.get("limit", 5),
             memory_type=args.get("memory_type"),
             category=args.get("category"),
+            project_id=scoped_project_id,
         )
     if tool_name == "conport_forget":
         client.forget(
@@ -464,7 +517,13 @@ def _do_dispatch(
         )
         return {"ok": True, "memory_id": args["memory_id"]}
     if tool_name == "conport_reflect":
-        return client.reflect(agent_uuid=agent_uuid, scope=args.get("scope", "day"))
+        reflect_scope = args.get("project_scope", "project")
+        scoped_project_id = project_id if reflect_scope == "project" else None
+        return client.reflect(
+            agent_uuid=agent_uuid,
+            scope=args.get("scope", "day"),
+            project_id=scoped_project_id,
+        )
     if tool_name == "conport_link_memories":
         return client.link_memories(
             agent_uuid=agent_uuid,

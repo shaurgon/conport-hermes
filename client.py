@@ -95,6 +95,7 @@ class ConPortClient:
         limit: int = 5,
         memory_type: str | None = None,
         category: str | None = None,
+        project_id: int | None = None,
         timeout: float | None = None,
     ) -> list[MemoryRecord]:
         params: dict[str, Any] = {"q": query, "limit": limit}
@@ -102,6 +103,8 @@ class ConPortClient:
             params["memory_type"] = memory_type
         if category:
             params["category"] = category
+        if project_id is not None:
+            params["project_id"] = project_id
         r = self._client.get(
             f"/api/v1/agents/{agent_uuid}/memories/recall",
             params=params,
@@ -120,6 +123,7 @@ class ConPortClient:
         category: str = "resource",
         entity_ref: str | None = None,
         pinned: bool = False,
+        project_id: int | None = None,
     ) -> MemoryRecord:
         payload: dict[str, Any] = {
             "content": content,
@@ -130,6 +134,8 @@ class ConPortClient:
         }
         if entity_ref:
             payload["entity_ref"] = entity_ref
+        if project_id is not None:
+            payload["project_id"] = project_id
         r = self._client.post(f"/api/v1/agents/{agent_uuid}/memories", json=payload)
         r.raise_for_status()
         return _as(MemoryRecord, r.json())
@@ -153,10 +159,19 @@ class ConPortClient:
         r.raise_for_status()
         return _as(MemoryRecord, r.json())
 
-    def reflect(self, agent_uuid: str, scope: str = "day") -> ReflectResult:
+    def reflect(
+        self,
+        agent_uuid: str,
+        scope: str = "day",
+        *,
+        project_id: int | None = None,
+    ) -> ReflectResult:
+        params: dict[str, Any] = {"scope": scope}
+        if project_id is not None:
+            params["project_id"] = project_id
         r = self._client.get(
             f"/api/v1/agents/{agent_uuid}/memories/reflect",
-            params={"scope": scope},
+            params=params,
         )
         r.raise_for_status()
         return _as(ReflectResult, r.json())
