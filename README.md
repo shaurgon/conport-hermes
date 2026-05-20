@@ -14,9 +14,20 @@ A default ConPort agent is auto-created and bound to your Hermes profile in one 
 - **Cross-session memory** backed by ConPort's knowledge graph
 - **Auto-recall** injected before every turn (non-blocking, 2-second budget)
 - **Agent-memory tools (5):** `conport_remember`, `conport_recall`, `conport_forget`, `conport_reflect`, `conport_link_memories`
-- **Project tools (11, v0.2):** `conport_attach_project` + `search`, `add_task`, `update_task`, `list_tasks`, `sync_decision`, `log_progress`, `get_document`, `list_documents`, `add_document`, `update_document` — agent works with project tasks/decisions/docs without standing up a separate MCP client
 - **Reflection** — dedup, supersede stale memories, surface patterns
 - **CLI** — `hermes conport-hermes status | agent | memories | reflect | tail | init`
+
+> **v0.6.0 — project tools removed (decision-660).** Earlier versions
+> shipped `conport_attach_project` + 14 project-level tools (search,
+> tasks, decisions, progress, documents, blocks). Harness agents work
+> in continuous conversation streams with dozens of context switches
+> per day — session-state with one "attached project" + per-project
+> scope is incompatible with that runtime. Project work
+> (decisions / tasks / docs) lives in the dedicated `conport` skill
+> or direct ConPort MCP/REST calls now, not through this provider.
+> Migration: nothing to do for code that only used the agent-memory
+> tools; code using project tools needs to switch to direct ConPort
+> calls.
 
 ## Prerequisites
 
@@ -91,60 +102,25 @@ Non-secret config is stored at `$HERMES_HOME/conport_provider.json`. The API key
 | `conport_reflect` | Trigger consolidation: dedup, supersede stale, surface patterns | "Reflect on the last week", "Consolidate today's memories" |
 | `conport_link_memories` | Connect two memories with a typed relation | Used implicitly by reflect; agents can also call directly |
 
-### Project tools (v0.2)
+### Project tools — removed in v0.6.0
 
-Agent memory is per-agent; project tools work against a shared knowledge base
-(tasks, decisions, documents, progress) scoped to a single ConPort project.
-Call `conport_attach_project(name="my-project")` once per session before any
-project tool — scope persists in-process for the rest of the Hermes session.
+Earlier versions exposed a project-shaped surface (`conport_attach_project`,
+`conport_search`, `conport_add_task`, `conport_sync_decision`,
+`conport_log_progress`, document tools, block tools — 14 tools total).
+Removed in v0.6.0 per decision-660: harness agents work in continuous
+conversation streams with dozens of context switches per day, not
+project-shaped tasks. The "currently attached project" pattern is
+incompatible with that runtime.
 
-| Tool | Purpose |
-|------|---------|
-| `conport_attach_project` | Resolve a project by name (or numeric id) and bind to it |
-| `conport_search` | Hybrid semantic + FTS search across the attached project |
-| `conport_add_task` | Create a task (title, description, priority, parent) |
-| `conport_update_task` | Update a task; pass `resolution` on `status=DONE/CANCELLED` to record verdict + auto-log progress |
-| `conport_list_tasks` | List tasks with status/priority filters |
-| `conport_sync_decision` | Record an architectural decision with rationale and tags |
-| `conport_log_progress` | Standalone progress entry (NOT for task closes — those auto-log) |
-| `conport_get_document` | Fetch a document by per-project document_id |
-| `conport_list_documents` | List documents (filter by `doc_type` optional) |
-| `conport_add_document` | Create a new document (search first to avoid duplicates) |
-| `conport_update_document` | Update a document body (`content=<markdown>` — block reconciliation diffs against existing blocks) and/or metadata. For single-block surgical edits use `conport_update_block`. |
-| `conport_get_block` / `conport_update_block` / `conport_insert_block` / `conport_delete_block` | Per-block CRUD — surgical edits that re-embed only the touched block instead of the whole document. |
+If you need project work from Hermes, call ConPort directly:
 
-Example flow:
+- Via MCP — point the harness at `https://api.conport.app/mcp` with
+  your `cport_live_…` key.
+- Via REST — `httpx` against `https://api.conport.app/api/v1/...` with
+  `X-API-Key: cport_live_…`.
 
-```
-> Attach to project "conport-global", then summarise open tasks
-[agent calls conport_attach_project(name="conport-global")]
-[agent calls conport_list_tasks()]
-[agent answers from results]
-
-> Mark task-291 as done — resolution: shipped v0.2
-[agent calls conport_update_task(task_id=291, status="DONE", resolution="shipped v0.2")]
-```
-
-Closing tasks: pass `resolution=...` — the server upserts a `## Resolution`
-section into the task description AND creates a linked progress entry.
-Do NOT call `conport_log_progress` separately for task closes.
-
-#### Document editing
-
-Documents are stored as ordered blocks (headings, paragraphs, code, lists,
-tables) with stable ULIDs and per-block embeddings. Two surfaces:
-
-- **Whole-document replace** — `conport_update_document(document_id=N, content="...")`. The server parses the new markdown into blocks and reconciles against the existing ones: unchanged blocks keep their ULIDs (and embeddings, and entity mentions), changed blocks get re-embedded, deleted blocks are dropped. Use this for major rewrites where many blocks change at once.
-- **Per-block surgical edits** — `conport_update_block(document_id, block_ulid, markdown)`, `conport_insert_block(document_id, markdown, after=<ulid>)`, `conport_delete_block(document_id, block_ulid)`. Use these for single-paragraph fixes — only the touched block re-embeds, drift detection runs against just that block.
-
-To find the block ULID of the paragraph you want to edit, call
-`conport_list_blocks(document_id)` and pick the right one by its `text`.
-
-Anti-pattern: if you find yourself about to `conport_add_document` a doc that
-*comments on*, *amends*, or *FAQ-answers* an existing one, don't. Use
-`conport_update_block` / `conport_insert_block` on the relevant block of the
-original, or create an addendum that links back via a `> [!extends] [[doc-N]]`
-callout in its body.
+The `conport` Claude Code skill exposes the full project tool surface
+if you're driving project work from Claude Code rather than Hermes.
 
 ### Memory shape
 

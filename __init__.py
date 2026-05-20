@@ -15,18 +15,24 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
 
 PROVIDER_NAME = "conport"
 
 
 _SYSTEM_PROMPT_BLOCK = """\
-## ConPort — Persistent Memory & Project Knowledge
+## ConPort — Persistent Agent Memory
 
 ConPort is your long-term knowledge graph. Identity is already bound to this
-profile; recall is auto-injected before every turn. You also have project-level
-tools (search, tasks, decisions, progress, documents) — call
-`conport_attach_project(name=...)` once to scope them.
+profile; recall is auto-injected before every turn. Use the agent-memory
+tools (conport_remember / conport_recall / conport_forget / conport_reflect
+/ conport_link_memories) for everything durable you learn.
+
+> v0.6.0 — project tools (search, tasks, decisions, progress, documents)
+> are intentionally **not** part of the harness distribution: agent layer
+> is structurally separate from project memory (decision-660). If you
+> need project work, use the dedicated `conport` skill or call ConPort
+> directly via MCP/REST — not through this provider.
 
 ### NEVER store
 - Secrets, passwords, API keys, tokens — even partially.
@@ -88,36 +94,6 @@ tools (search, tasks, decisions, progress, documents) — call
 - No secrets in memory content?
 - Outdated memories superseded or forgotten?
 - `conport_reflect(scope="day")` at end of session for consolidation?
-
-## Project tools (after `conport_attach_project`)
-
-| Trigger | Action |
-|---------|--------|
-| Question about a project | `conport_search(query=..., item_types?=..., tags?=...)` BEFORE answering |
-| New task | `conport_add_task(title, description?, priority?, parent_task_id?)` |
-| Start work | `conport_update_task(task_id, status="IN_PROGRESS")` |
-| Finish work | `conport_update_task(task_id, status="DONE", resolution="...")` (auto-logs progress) |
-| Standalone progress (not a task close) | `conport_log_progress(description, title?, linked_item_type?, linked_item_id?)` |
-| Architectural choice | `conport_sync_decision(summary, rationale?, tags?)` |
-| Read a doc | `conport_get_document(document_id)` |
-| Browse docs | `conport_list_documents(doc_type?)` |
-| Write a new spec/runbook | `conport_add_document(title, content, doc_type?, tags?)` |
-| Edit a doc (body or metadata) | `conport_update_document(document_id, content=<full markdown>, title?=...)` |
-| Read a single block | `conport_get_block(document_id, block_ulid)` |
-| Edit one block (surgical, fast) | `conport_update_block(document_id, block_ulid, markdown)` |
-| Insert a block | `conport_insert_block(document_id, markdown, after?\\|before?)` |
-| Delete a block | `conport_delete_block(document_id, block_ulid)` |
-
-Documents anti-pattern: don't `conport_add_document` a meta-doc that comments
-on another doc — `conport_update_document` the original (or write an addendum
-with a `> [!extends] [[doc-N]]` callout linking it back). Search first.
-
-Block-level editing: prefer `conport_update_block` for one-block edits — it
-re-embeds only that block. Use `conport_update_document(content=...)` only
-when you're replacing the whole document body.
-
-Closing a task: pass `resolution=...` — server creates the linked progress
-entry. Do NOT call `conport_log_progress` separately for task closes.
 """
 
 
@@ -152,8 +128,6 @@ class ConPortMemoryProvider:
         self._platform: str | None = None
         self._recall_limit: int = 5
         self._recall_timeout: float = 2.0
-        self._project_id: int | None = None
-        self._project_name: str | None = None
 
     @property
     def name(self) -> str:
@@ -300,37 +274,11 @@ class ConPortMemoryProvider:
                 },
                 ensure_ascii=False,
             )
-        if name == "conport_attach_project":
-            return self._handle_attach_project(args)
         return dispatch_tool(
             tool_name=name,
             args=args,
             client=self._client,
             agent_uuid=self._agent_uuid,
-            project_id=self._project_id,
-        )
-
-    def _handle_attach_project(self, args: dict[str, Any]) -> str:
-        identifier = args.get("name")
-        if not identifier:
-            return json.dumps({"error": "missing required argument: name"})
-        assert self._client is not None  # checked in handle_tool_call
-        try:
-            project = self._client.get_project(identifier)
-        except Exception as exc:  # noqa: BLE001
-            return json.dumps({"error": f"failed to attach project: {exc}"})
-        project_id = project.get("id")
-        project_name = project.get("name")
-        if not isinstance(project_id, int):
-            return json.dumps({"error": "project response missing numeric id"})
-        self._project_id = project_id
-        self._project_name = project_name if isinstance(project_name, str) else None
-        return json.dumps(
-            {
-                "ok": True,
-                "project_id": project_id,
-                "project_name": self._project_name,
-            }
         )
 
     # --- optional hooks ---

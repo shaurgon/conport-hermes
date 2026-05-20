@@ -1,6 +1,13 @@
 """Tool schemas exposed via MemoryProvider.get_tool_schemas / handle_tool_call.
 
 Per Hermes contract: handler is sync and returns a JSON string (never raises).
+
+v0.6.0 — agent-memory-only surface (decision-660). Project tools removed
+from the harness distribution: harness agents work in continuous
+conversation streams with dozens of context switches per day, not
+project-shaped tasks; the agent layer is structurally separate from
+project memory. Project work (decisions / tasks / docs) lives in the
+``conport`` skill or direct ConPort MCP/REST calls, not here.
 """
 
 from __future__ import annotations
@@ -14,49 +21,15 @@ from .client import ConPortClient
 MEMORY_TYPES = ("fact", "feedback", "pattern", "note", "tacit", "decision")
 PARA_CATEGORIES = ("project", "area", "resource", "archive")
 RELATION_TYPES = ("related_to", "supersedes", "derives_from", "contradicts", "supports")
-TASK_STATUSES = ("TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED")
-SEARCH_ITEM_TYPES = (
-    "decision",
-    "pattern",
-    "progress_entry",
-    "context",
-    "custom_data",
-    "task",
-    "document",
-)
-DOC_TYPES = (
-    "spec",
-    "runbook",
-    "api_docs",
-    "tutorial",
-    "architecture",
-    "meeting_notes",
-    "other",
-)
-DOC_STATUSES = ("active", "archived")
-DOC_PATCH_OPS_HELP = (
-    "Patch operation. Each item must have an `op` field plus op-specific args:\n"
-    "- {op:'set_content', content:str} — replace whole body\n"
-    "- {op:'replace_section_body', heading:str, content:str} — heading like "
-    "'## API' or '## A > ### B'; rewrites body of that section (incl. subsections)\n"
-    "- {op:'append_to_section', heading:str, content:str} — append before first subsection\n"
-    "- {op:'insert_section_after', heading:str, content:str} — insert markdown block after section\n"
-    "- {op:'delete_section', heading:str} — delete section incl. subsections\n"
-    "- {op:'find_replace', find:str, replace:str, replace_all?:bool} — literal find/replace"
-)
-
-
-NO_PROJECT_ERROR = "no project attached — call conport_attach_project(name=...) first"
 
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "conport_remember",
         "description": (
-            "Persist something durable: a decision, lesson, fact, or pattern. "
-            "Defaults to scoping the memory to the currently attached project (so "
-            "another project's recall won't surface it). Pass scope='global' for "
-            "cross-project memories (identity, principles, person-knowledge)."
+            "Persist a durable agent memory: a fact, lesson, decision, or "
+            "pattern. Memories are agent-scoped (no project attachment in "
+            "harness mode — see plugin v0.6.0 changelog)."
         ),
         "parameters": {
             "type": "object",
@@ -75,17 +48,6 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "entity_ref": {"type": "string", "description": "Canonical entity name to link"},
                 "pinned": {"type": "boolean", "default": False},
-                "scope": {
-                    "type": "string",
-                    "enum": ["project", "global"],
-                    "default": "project",
-                    "description": (
-                        "'project' (default) — memory scoped to the attached project, "
-                        "invisible from other projects' recalls. 'global' — agent-wide, "
-                        "visible from every project (use for identity / principles / "
-                        "cross-cutting feedback only)."
-                    ),
-                },
             },
             "required": ["content"],
         },
@@ -93,10 +55,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "conport_recall",
         "description": (
-            "Search prior memories with semantic + decay-aware scoring. By default "
-            "returns only memories from the attached project + agent-global ones — "
-            "never leaks content from other attached projects. Use scope='all' for "
-            "cross-project audit."
+            "Search prior agent memories with semantic + decay-aware scoring."
         ),
         "parameters": {
             "type": "object",
@@ -105,16 +64,6 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
                 "memory_type": {"type": "string", "enum": list(MEMORY_TYPES)},
                 "category": {"type": "string", "enum": list(PARA_CATEGORIES)},
-                "scope": {
-                    "type": "string",
-                    "enum": ["project", "all"],
-                    "default": "project",
-                    "description": (
-                        "'project' (default, safe) — recall only sees the attached "
-                        "project + global rows. 'all' — full cross-project scan (audit "
-                        "only; do not pipe into add_task / log_progress)."
-                    ),
-                },
             },
             "required": ["query"],
         },
@@ -135,8 +84,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "name": "conport_reflect",
         "description": (
             "Trigger reflection/synthesis: dedup, supersede, surface patterns. "
-            "Defaults to project-scoped — operates only on the attached project + "
-            "agent-global memories. Use project_scope='all' for cross-project audit."
+            "Operates over the agent's memories (no project filter)."
         ),
         "parameters": {
             "type": "object",
@@ -146,21 +94,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "enum": ["day", "week", "full"],
                     "default": "day",
                 },
-                "project_scope": {
-                    "type": "string",
-                    "enum": ["project", "all"],
-                    "default": "project",
-                    "description": (
-                        "'project' (default) — reflect over attached project + global. "
-                        "'all' — every project the agent has memories in."
-                    ),
-                },
             },
         },
     },
     {
         "name": "conport_link_memories",
-        "description": "Connect two memories with a typed relation (related_to, supersedes, derives_from, contradicts, supports).",
+        "description": (
+            "Connect two memories with a typed relation "
+            "(related_to, supersedes, derives_from, contradicts, supports)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -172,278 +114,6 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "required": ["source_memory_id", "target_memory_id", "relation_type"],
         },
     },
-    {
-        "name": "conport_attach_project",
-        "description": (
-            "Attach to a ConPort project by name. Required before using any "
-            "project-level tool (search/tasks/decisions/progress/documents). "
-            "Scope persists for the rest of the session."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Project name or numeric ID"},
-            },
-            "required": ["name"],
-        },
-    },
-    {
-        "name": "conport_search",
-        "description": (
-            "Search across the attached project's content (decisions, patterns, "
-            "tasks, documents, progress, context). Semantic + FTS hybrid."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
-                "item_types": {
-                    "type": "array",
-                    "items": {"type": "string", "enum": list(SEARCH_ITEM_TYPES)},
-                    "description": "Restrict results to these item types",
-                },
-                "tags": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "conport_add_task",
-        "description": "Create a task in the attached project.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "maxLength": 200},
-                "description": {"type": "string"},
-                "status": {
-                    "type": "string",
-                    "enum": list(TASK_STATUSES),
-                    "default": "TODO",
-                },
-                "priority": {"type": "integer", "minimum": 1, "maximum": 5, "default": 3},
-                "parent_task_id": {"type": "integer"},
-            },
-            "required": ["title"],
-        },
-    },
-    {
-        "name": "conport_update_task",
-        "description": (
-            "Update a task. On status=DONE/CANCELLED pass `resolution` to record "
-            "the verdict (auto-logs a progress entry; do NOT call conport_log_progress "
-            "separately for task closes)."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "task_id": {"type": "integer"},
-                "title": {"type": "string"},
-                "description": {"type": "string"},
-                "status": {"type": "string", "enum": list(TASK_STATUSES)},
-                "priority": {"type": "integer", "minimum": 1, "maximum": 5},
-                "parent_task_id": {"type": "integer"},
-                "resolution": {"type": "string"},
-            },
-            "required": ["task_id"],
-        },
-    },
-    {
-        "name": "conport_list_tasks",
-        "description": "List tasks in the attached project. Default: TODO + IN_PROGRESS.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "description": (
-                        "Comma-separated statuses (e.g. 'TODO,IN_PROGRESS') or 'ALL'"
-                    ),
-                    "default": "TODO,IN_PROGRESS",
-                },
-                "priority": {"type": "integer", "minimum": 1, "maximum": 5},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
-            },
-        },
-    },
-    {
-        "name": "conport_sync_decision",
-        "description": (
-            "Record an architectural decision with rationale and tags in the attached project."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "summary": {"type": "string", "maxLength": 200},
-                "rationale": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["summary"],
-        },
-    },
-    {
-        "name": "conport_log_progress",
-        "description": (
-            "Log a standalone progress entry (NOT for task closes — those auto-log "
-            "via conport_update_task with resolution=...)."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "description": {"type": "string"},
-                "title": {"type": "string", "maxLength": 200},
-                "parent_id": {"type": "integer"},
-                "linked_item_type": {
-                    "type": "string",
-                    "enum": ["task", "decision", "pattern"],
-                },
-                "linked_item_id": {"type": "integer"},
-            },
-            "required": ["description"],
-        },
-    },
-    {
-        "name": "conport_get_document",
-        "description": "Fetch a document from the attached project by per-project document_id.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "integer"},
-                "raw": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Return unmodified markdown (skip Wave 5 stub injection)",
-                },
-            },
-            "required": ["document_id"],
-        },
-    },
-    {
-        "name": "conport_list_documents",
-        "description": "List documents in the attached project, optionally filtered by doc_type.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "doc_type": {"type": "string", "enum": list(DOC_TYPES)},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
-            },
-        },
-    },
-    {
-        "name": "conport_add_document",
-        "description": (
-            "Create a new document in the attached project. Search first to avoid "
-            "duplicates — prefer conport_update_document or a callout-linked addendum "
-            "over creating overlapping docs."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "content": {"type": "string", "description": "Full markdown body"},
-                "doc_type": {
-                    "type": "string",
-                    "enum": list(DOC_TYPES),
-                    "default": "spec",
-                },
-                "parent_document_id": {"type": "integer"},
-                "author": {"type": "string"},
-                "external_url": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["title", "content"],
-        },
-    },
-    {
-        "name": "conport_update_document",
-        "description": (
-            "Update a document. Pass content=<full markdown> to replace the body — "
-            "the block reconciliation engine keeps unchanged blocks (and their "
-            "embeddings/entity mentions), re-embeds dirty blocks, drops removed "
-            "ones. Metadata fields (title, doc_type, tags, ...) can be updated "
-            "without content. For single-block surgical edits, prefer "
-            "conport_update_block (skips the document-wide reconcile)."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "integer"},
-                "title": {"type": "string"},
-                "content": {
-                    "type": "string",
-                    "description": "Full markdown body — replaces the document content.",
-                },
-                "doc_type": {"type": "string", "enum": list(DOC_TYPES)},
-                "parent_document_id": {"type": "integer"},
-                "author": {"type": "string"},
-                "external_url": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "status": {"type": "string", "enum": list(DOC_STATUSES)},
-            },
-            "required": ["document_id"],
-        },
-    },
-    {
-        "name": "conport_get_block",
-        "description": "Read one block by ULID from a document.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "integer"},
-                "block_ulid": {"type": "string", "description": "Block ULID."},
-            },
-            "required": ["document_id", "block_ulid"],
-        },
-    },
-    {
-        "name": "conport_update_block",
-        "description": (
-            "Replace one block's markdown without touching the surrounding document. "
-            "Use this for surgical edits — beats conport_update_document(content=...) "
-            "for single-block changes because it doesn't re-embed every block."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "integer"},
-                "block_ulid": {"type": "string"},
-                "markdown": {
-                    "type": "string",
-                    "description": "New markdown text for this block.",
-                },
-            },
-            "required": ["document_id", "block_ulid", "markdown"],
-        },
-    },
-    {
-        "name": "conport_insert_block",
-        "description": (
-            "Insert a new block into a document. Pass after=<ulid> or before=<ulid> "
-            "to position; omit both to append at the end."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "integer"},
-                "markdown": {"type": "string"},
-                "after": {"type": "string", "description": "ULID to insert after (mutually exclusive with before)."},
-                "before": {"type": "string", "description": "ULID to insert before (mutually exclusive with after)."},
-            },
-            "required": ["document_id", "markdown"],
-        },
-    },
-    {
-        "name": "conport_delete_block",
-        "description": "Delete one block by ULID. Returns 404 if the block doesn't exist.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "integer"},
-                "block_ulid": {"type": "string"},
-            },
-            "required": ["document_id", "block_ulid"],
-        },
-    },
 ]
 
 
@@ -453,25 +123,15 @@ def dispatch_tool(
     args: dict[str, Any],
     client: ConPortClient,
     agent_uuid: str,
-    project_id: int | None = None,
 ) -> str:
-    """Dispatch a tool call.
-
-    `conport_attach_project` is intentionally not handled here — it requires
-    write access to provider session state, so the provider's
-    ``handle_tool_call`` intercepts it before calling dispatch.
+    """Dispatch a tool call. Handler is sync and returns a JSON string;
+    never raises (errors surface as {"error": ..., "tool": ...} JSON).
     """
     try:
-        result = _do_dispatch(tool_name, args, client, agent_uuid, project_id)
+        result = _do_dispatch(tool_name, args, client, agent_uuid)
         return json.dumps(result)
     except Exception as exc:  # noqa: BLE001 — handler must never raise
         return json.dumps({"error": str(exc), "tool": tool_name})
-
-
-def _require_project(project_id: int | None) -> int:
-    if project_id is None:
-        raise RuntimeError(NO_PROJECT_ERROR)
-    return project_id
 
 
 def _do_dispatch(
@@ -479,15 +139,8 @@ def _do_dispatch(
     args: dict[str, Any],
     client: ConPortClient,
     agent_uuid: str,
-    project_id: int | None,
 ) -> Any:
-    # --- agent memory ---
-    # Memory scoping (task-331): by default, scope reads/writes to the
-    # attached project so a multi-project agent can't leak content across
-    # projects. Agent can opt out via scope='global'/'all'.
     if tool_name == "conport_remember":
-        write_scope = args.get("scope", "project")
-        scoped_project_id = project_id if write_scope == "project" else None
         return client.remember(
             agent_uuid=agent_uuid,
             content=args["content"],
@@ -496,18 +149,14 @@ def _do_dispatch(
             tags=args.get("tags"),
             entity_ref=args.get("entity_ref"),
             pinned=args.get("pinned", False),
-            project_id=scoped_project_id,
         )
     if tool_name == "conport_recall":
-        read_scope = args.get("scope", "project")
-        scoped_project_id = project_id if read_scope == "project" else None
         return client.recall(
             agent_uuid=agent_uuid,
             query=args["query"],
             limit=args.get("limit", 5),
             memory_type=args.get("memory_type"),
             category=args.get("category"),
-            project_id=scoped_project_id,
         )
     if tool_name == "conport_forget":
         client.forget(
@@ -517,12 +166,9 @@ def _do_dispatch(
         )
         return {"ok": True, "memory_id": args["memory_id"]}
     if tool_name == "conport_reflect":
-        reflect_scope = args.get("project_scope", "project")
-        scoped_project_id = project_id if reflect_scope == "project" else None
         return client.reflect(
             agent_uuid=agent_uuid,
             scope=args.get("scope", "day"),
-            project_id=scoped_project_id,
         )
     if tool_name == "conport_link_memories":
         return client.link_memories(
@@ -532,120 +178,4 @@ def _do_dispatch(
             relation_type=args["relation_type"],
             similarity_score=args.get("similarity_score"),
         )
-    # --- project tools ---
-    if tool_name == "conport_search":
-        return client.search(
-            query=args["query"],
-            project_id=_require_project(project_id),
-            limit=args.get("limit", 20),
-            item_types=args.get("item_types"),
-            tags=args.get("tags"),
-        )
-    if tool_name == "conport_add_task":
-        return client.create_task(
-            project_id=_require_project(project_id),
-            title=args["title"],
-            description=args.get("description"),
-            status=args.get("status", "TODO"),
-            priority=args.get("priority", 3),
-            parent_task_id=args.get("parent_task_id"),
-        )
-    if tool_name == "conport_update_task":
-        return client.update_task(
-            project_id=_require_project(project_id),
-            task_id=args["task_id"],
-            title=args.get("title"),
-            description=args.get("description"),
-            status=args.get("status"),
-            priority=args.get("priority"),
-            parent_task_id=args.get("parent_task_id"),
-            resolution=args.get("resolution"),
-        )
-    if tool_name == "conport_list_tasks":
-        return client.list_tasks(
-            project_id=_require_project(project_id),
-            status=args.get("status", "TODO,IN_PROGRESS"),
-            priority=args.get("priority"),
-            limit=args.get("limit", 50),
-        )
-    if tool_name == "conport_sync_decision":
-        return client.create_decision(
-            project_id=_require_project(project_id),
-            summary=args["summary"],
-            rationale=args.get("rationale"),
-            tags=args.get("tags"),
-        )
-    if tool_name == "conport_log_progress":
-        return client.create_progress(
-            project_id=_require_project(project_id),
-            description=args["description"],
-            title=args.get("title"),
-            parent_id=args.get("parent_id"),
-            linked_item_type=args.get("linked_item_type"),
-            linked_item_id=args.get("linked_item_id"),
-        )
-    if tool_name == "conport_get_document":
-        return client.get_document(
-            project_id=_require_project(project_id),
-            document_id=args["document_id"],
-            raw=args.get("raw", False),
-        )
-    if tool_name == "conport_list_documents":
-        return client.list_documents(
-            project_id=_require_project(project_id),
-            doc_type=args.get("doc_type"),
-            limit=args.get("limit", 50),
-        )
-    if tool_name == "conport_add_document":
-        return client.create_document(
-            project_id=_require_project(project_id),
-            title=args["title"],
-            content=args["content"],
-            doc_type=args.get("doc_type", "spec"),
-            parent_document_id=args.get("parent_document_id"),
-            author=args.get("author"),
-            external_url=args.get("external_url"),
-            tags=args.get("tags"),
-        )
-    if tool_name == "conport_update_document":
-        return client.update_document(
-            project_id=_require_project(project_id),
-            document_id=args["document_id"],
-            title=args.get("title"),
-            content=args.get("content"),
-            doc_type=args.get("doc_type"),
-            parent_document_id=args.get("parent_document_id"),
-            author=args.get("author"),
-            external_url=args.get("external_url"),
-            tags=args.get("tags"),
-            status=args.get("status"),
-        )
-    if tool_name == "conport_get_block":
-        return client.get_block(
-            project_id=_require_project(project_id),
-            document_id=args["document_id"],
-            block_ulid=args["block_ulid"],
-        )
-    if tool_name == "conport_update_block":
-        return client.update_block(
-            project_id=_require_project(project_id),
-            document_id=args["document_id"],
-            block_ulid=args["block_ulid"],
-            markdown=args["markdown"],
-        )
-    if tool_name == "conport_insert_block":
-        return client.insert_block(
-            project_id=_require_project(project_id),
-            document_id=args["document_id"],
-            markdown=args["markdown"],
-            after=args.get("after"),
-            before=args.get("before"),
-        )
-    if tool_name == "conport_delete_block":
-        client.delete_block(
-            project_id=_require_project(project_id),
-            document_id=args["document_id"],
-            block_ulid=args["block_ulid"],
-        )
-        return {"deleted": True}
     raise ValueError(f"Unknown tool: {tool_name}")
