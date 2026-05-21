@@ -136,41 +136,56 @@ def conport_hermes_command(args: argparse.Namespace) -> None:
     try:
         if sub == "status":
             agent = client.get_agent(uuid)
-            recent = client.list_memories(uuid, limit=1)
-            print(f"agent_uuid     {uuid}")
-            print(f"agent_name     {agent.get('name', '')}")
-            print(f"memory_count   {agent.get('memory_count', '?')}")
-            if recent:
-                print(f"last_activity  {recent[0].get('created_at', '?')}")
+            payload = client.agent_init(uuid)
+            print(f"agent_uuid       {uuid}")
+            print(f"agent_name       {agent.get('name', '')}")
+            print(f"bootstrap_state  {payload.get('bootstrap_state', '?')}")
+            print(f"trunk_root_id    {payload.get('trunk_root_id', '?')}")
+            print(f"active_branches  {len(payload.get('active_branches', []) or [])}")
+            print(f"lift_candidates  {payload.get('pending_lift_candidates', 0)}")
+            print(f"conflicts        {payload.get('pending_promotion_conflicts', 0)}")
         elif sub == "agent":
-            print(json.dumps(client.get_agent(uuid), indent=2))
+            print(json.dumps(client.get_agent(uuid), indent=2, ensure_ascii=False))
         elif sub == "reflect":
-            print(json.dumps(client.reflect(uuid, scope=args.scope), indent=2))
-        elif sub == "memories":
-            for m in client.list_memories(uuid, limit=args.limit):
-                snippet = (m.get("content") or "")[:120]
-                print(f"#{m.get('id', '?')} ({m.get('memory_type', 'note')}) {snippet}")
+            print(
+                json.dumps(
+                    client.reflect(uuid, node_id=args.node_id, new_content=args.new_content),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
+        elif sub == "branches":
+            print(
+                json.dumps(
+                    client.list_branches(uuid, state=args.state),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
         elif sub == "tail":
+            # Poll the active-branches list. Cron-style watch — useful from an
+            # operator shell, not from inside the agent loop.
             seen: set[int] = set()
             try:
                 while True:
-                    for m in client.list_memories(uuid, limit=args.limit):
-                        mid = m.get("id")
-                        if not isinstance(mid, int) or mid in seen:
+                    for b in client.list_branches(uuid, state="active"):
+                        bid = b.get("branch_id")
+                        if not isinstance(bid, int) or bid in seen:
                             continue
-                        seen.add(mid)
-                        snippet = (m.get("content") or "")[:200]
-                        print(f"#{mid} ({m.get('memory_type')}) {snippet}")
+                        seen.add(bid)
+                        preview = (b.get("origin_content_preview") or "")[:200]
+                        print(f"branch-{bid} ({b.get('branch_state', '?')}) {preview}")
                     time.sleep(args.interval)
             except KeyboardInterrupt:
                 pass
         else:
             raise SystemExit(
                 "Usage: hermes conport-hermes "
-                "{init|status|agent|reflect|memories|tail}"
+                "{init|status|agent|reflect|branches|tail}"
             )
     finally:
         client.close()
+    return None
 
 
 def register_cli(subparser: argparse.ArgumentParser) -> None:
@@ -183,17 +198,22 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     sub = subparser.add_subparsers(dest="conport_hermes_subcommand", required=True)
 
     sub.add_parser("init", help="Run identity wizard (create or attach an agent)")
-    sub.add_parser("status", help="Identity, memory count, last activity")
+    sub.add_parser("status", help="Identity + bootstrap state + counters")
     sub.add_parser("agent", help="Show full agent record")
 
-    refl = sub.add_parser("reflect", help="Manually trigger reflect")
-    refl.add_argument("--scope", default="day", choices=["day", "week", "full"])
+    refl = sub.add_parser("reflect", help="Manually invoke gravity on a node")
+    refl.add_argument("--node-id", dest="node_id", type=int, required=True)
+    refl.add_argument(
+        "--new-content",
+        dest="new_content",
+        default=None,
+        help="Merged content; omit for bookkeeping-only reflect.",
+    )
 
-    mem = sub.add_parser("memories", help="List recent memories")
-    mem.add_argument("--limit", type=int, default=20)
+    br = sub.add_parser("branches", help="List branches optionally by state")
+    br.add_argument("--state", choices=["active", "dormant", "closed"], default=None)
 
-    tail = sub.add_parser("tail", help="Stream new memories (poll)")
-    tail.add_argument("--limit", type=int, default=10)
+    tail = sub.add_parser("tail", help="Stream new active branches (poll)")
     tail.add_argument("--interval", type=float, default=2.0)
 
     subparser.set_defaults(func=conport_hermes_command)

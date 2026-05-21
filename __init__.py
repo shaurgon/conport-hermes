@@ -15,85 +15,98 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "0.6.0"
+__version__ = "1.0.0"
 
 PROVIDER_NAME = "conport"
 
 
 _SYSTEM_PROMPT_BLOCK = """\
-## ConPort — Persistent Agent Memory
+## ConPort — Agent Memory v2
 
-ConPort is your long-term knowledge graph. Identity is already bound to this
-profile; recall is auto-injected before every turn. Use the agent-memory
-tools (conport_remember / conport_recall / conport_forget / conport_reflect
-/ conport_link_memories) for everything durable you learn.
+Your persistent memory is a **tree**, not a flat list (decisions 660–682).
+Identity is already bound; the init payload (trunk roots, active branches,
+pending lift/conflict counts) is auto-fetched at session start and a
+composite-scored recall is auto-injected before every turn.
 
-> v0.6.0 — project tools (search, tasks, decisions, progress, documents)
-> are intentionally **not** part of the harness distribution: agent layer
-> is structurally separate from project memory (decision-660). If you
-> need project work, use the dedicated `conport` skill or call ConPort
-> directly via MCP/REST — not through this provider.
+> Project tools (decisions, tasks, documents, search) are intentionally
+> **not** here: the agent layer is structurally separate from project
+> memory (decision-660). For project work use the `conport` skill or
+> direct REST against `/api/v1/...` — not this provider.
+
+### Anatomy
+
+- **trunk_root** + three reserved sub-stores: `identity_root` (who you
+  are), `principles_root` (rules you follow), `person_knowledge_root`
+  (facts about the user / world).
+- **branches** — episodic threads off trunk_root. One per long-running
+  task / topic. Origins ripen via gravity (decision-662) and can
+  crystallize into **skills** (decision-663).
+- **skills** — crystallized capabilities. Get cross-loaded
+  (`agent_load_skill`) across branches; cross-branch reuse promotes
+  them onto the trunk (decision-671).
+
+### Writes (the only one you usually need)
+
+`agent_remember(content)` — leave `parent_id` null and the backend picks
+the best ancestor by embedding similarity (argmax routing,
+decision-673). Anchor it explicitly only when you mean to:
+`parent_id = identity_root_id` for a self-statement,
+`parent_id = principles_root_id` for a rule, branch id for an episodic
+note inside a specific thread.
+
+### Reads
+
+- `agent_recall(query)` — composite-scored search across your whole
+  tree. Pass `scope_root_id` to narrow to one sub-store.
+- `agent_get_node(node_id)` / `agent_walk_branch(branch_id)` — explicit
+  navigation when you already know the anchor.
+- `agent_list_branches(state)` — what's active right now.
+
+### Reflection
+
+- `agent_reflect(node_id, new_content)` — manual gravity. Pass the
+  merged content; backend re-embeds + runs consolidation +
+  crystallisation checks. Backend never synthesises — you provide the
+  merge (decision-692).
+
+### Cross-pollination + promotion
+
+When you see `pending_lift_candidates` in `agent_init`:
+1. `agent_review_lift_candidates` → matched origins + scores
+2. `agent_confirm_lift(candidate_id, action='accept', synthesized_content=..., target_trunk_parent_id=...)`
+
+When you see `pending_promotion_conflicts`:
+1. `agent_review_promotion_conflicts` → conflict skill + nearest trunk neighbours
+2. `agent_resolve_promotion_conflict(skill_id, action='promote' | 'revert')`
 
 ### NEVER store
-- Secrets, passwords, API keys, tokens — even partially.
-  Bad: "API key: 0a732108..."  Good: "API key is in $API_KEY env var"
+
+Secrets, passwords, API keys, tokens — even partially. Reference where
+the value lives (`$API_KEY` env var) instead.
 
 ### Quality
-1. Extract the insight, not the story. Bad: "Task X completed: did Y, then Z."
-   Good: "POST /api/agents/{id}/skills/sync — desiredSkills defaults to null,
-   must be passed explicitly."
-2. Dedup is automatic. Server supersedes similar memories (>0.85 similarity).
-   Just write — don't pre-search.
-3. Use the right type. `feedback` and `pattern` are searchable by type;
-   don't dump everything as `fact`.
-4. Supersede outdated memories. Bug fixed? Config changed? Call `conport_forget`.
-5. Pin critical decisions. `pinned=true` for memories that must never decay.
 
-### Choosing type + category
+1. Extract the insight, not the story. Bad: "Task X completed: did Y,
+   then Z." Good: "POST /api/agents/{id}/skills/sync — `desiredSkills`
+   defaults to null, must be passed explicitly."
+2. Don't pre-search. Routing picks the right parent + gravity
+   consolidates duplicates with `consolidation_count`. Just write.
+3. Don't try to delete. Memory is non-destructive by design
+   (decision-667); supersession happens via consolidation +
+   re-crystallisation, not `forget`.
 
-| What happened | memory_type | category |
-|---------------|-------------|----------|
-| Environment quirk | `fact` | `resource` |
-| User correction | `feedback` | `area` |
-| Reusable approach | `pattern` | `resource` |
-| Session log / daily event | `note` | `project` |
-| User preference | `tacit` | `area` |
-| Architecture choice | `decision` | `area` |
+### Sunset (no v2 equivalent)
 
-### Memory types
-
-- `fact` — durable knowledge about the environment.
-- `feedback` — user/orchestrator corrected your behavior.
-- `pattern` — reusable approach or recurring issue.
-- `note` — daily timeline entry, event, session log.
-- `tacit` — user behavior patterns and preferences.
-- `decision` — architectural/design choice with rationale.
-
-### PARA categories
-
-- `project` — active work with a goal or deadline.
-- `area` — ongoing responsibility, no end date.
-- `resource` — reference material (default).
-- `archive` — inactive; moved here when no longer relevant.
-
-### Workflow
-
-| Trigger | Action |
-|---------|--------|
-| Learned something reusable | `conport_remember` (fact/pattern/feedback + category) |
-| End of session | `conport_remember` (type=note, category=project) |
-| User corrected behavior | `conport_remember` (type=feedback, category=area) |
-| Need past context | recall is auto-injected; call `conport_recall` for targeted lookups |
-| Memory outdated | `conport_forget` (soft) or with `hard_delete=true` |
-| Architectural decision | `conport_remember` (type=decision, pinned=true, category=area) |
-| Link related memories | `conport_link_memories` (relation_type: supersedes, derives_from, contradicts, supports, related_to) |
-| End of day / week | `conport_reflect` (scope=day or week) |
+`conport_forget` and explicit `conport_link_memories` are gone.
+Non-destructive gravity replaces the first; tree edges + trunk
+promotion replace the second.
 
 ### Checklist
-- New learning saved with correct type + category?
-- No secrets in memory content?
-- Outdated memories superseded or forgotten?
-- `conport_reflect(scope="day")` at end of session for consolidation?
+
+- New learning saved with `agent_remember`?
+- No secrets in the content?
+- `pending_lift_candidates` > 0 → review queue?
+- `pending_promotion_conflicts` > 0 → resolve them?
 """
 
 
@@ -128,6 +141,10 @@ class ConPortMemoryProvider:
         self._platform: str | None = None
         self._recall_limit: int = 5
         self._recall_timeout: float = 2.0
+        # Cached agent_init payload (decision-681). Populated in initialize()
+        # so prefetch / handle_tool_call can read trunk-root ids without a
+        # second round-trip per turn.
+        self._init_payload: dict[str, Any] | None = None
 
     @property
     def name(self) -> str:
@@ -203,7 +220,14 @@ class ConPortMemoryProvider:
 
         We capture: hermes_home (storage scope), agent_context (writes-allowed
         gate), agent_identity (profile name), platform (origin tag).
-        Other kwargs (user_id, chat_id, ...) are accepted but unused in v0.1.
+        Other kwargs (user_id, chat_id, ...) are accepted but unused in v1.0.
+
+        After loading config + identity we fire ``agent_init`` once per
+        session (decision-681) to materialise the tree if this is a new
+        agent and to refresh the cached trunk-root ids used by recall
+        scoping. Failures here are non-fatal — Hermes still gets the
+        tool surface; the agent will hit the backend on the first
+        explicit call.
         """
         self._session_id = session_id
         self._hermes_home = kwargs.get("hermes_home") or os.environ.get(
@@ -224,6 +248,18 @@ class ConPortMemoryProvider:
 
         self._client = ConPortClient(base_url=base_url, api_key=api_key)
         self._agent_uuid = self._load_agent_uuid()
+
+        if self._client and self._agent_uuid:
+            try:
+                # AgentInitPayload is a TypedDict; we store it as a plain
+                # dict for forward-compat (server may add keys we don't
+                # yet type) and to keep the union narrow.
+                payload = self._client.agent_init(self._agent_uuid)
+                self._init_payload = cast(dict[str, Any], payload)
+            except Exception:  # noqa: BLE001 — bootstrap is best-effort
+                self._init_payload = None
+        else:
+            self._init_payload = None
 
     def _load_provider_config(self) -> ProviderConfig:
         if not self._hermes_home:
@@ -292,7 +328,7 @@ class ConPortMemoryProvider:
         if not (self._client and self._agent_uuid):
             return None
         try:
-            memories = self._client.recall(
+            hits = self._client.recall(
                 agent_uuid=self._agent_uuid,
                 query=query,
                 limit=self._recall_limit,
@@ -300,11 +336,17 @@ class ConPortMemoryProvider:
             )
         except Exception:  # noqa: BLE001 — non-blocking is required
             return None
-        if not memories:
+        if not hits:
             return None
-        lines = [
-            f"- ({m.get('memory_type', 'note')}) {m.get('content', '')}" for m in memories
-        ]
+        lines: list[str] = []
+        for h in hits:
+            # RecallHit has id / content / similarity / composite_score
+            # (the last one is the canonical sort key, decision-678).
+            score = h.get("composite_score")
+            if score is None:
+                score = h.get("similarity")
+            prefix = f"- (#{h.get('id', '?')}" + (f", {score:.2f}" if isinstance(score, (int, float)) else "") + ")"
+            lines.append(f"{prefix} {h.get('content', '')}")
         return "Relevant ConPort memories:\n" + "\n".join(lines)
 
     def sync_turn(

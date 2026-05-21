@@ -1,6 +1,6 @@
 # conport-hermes
 
-ConPort memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — long-term knowledge graph for autonomous agents, with semantic recall, decay-aware scoring, and reflection.
+ConPort memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — long-term knowledge graph for autonomous agents on top of ConPort's Agent Memory v2 tree (decisions 660–682).
 
 ```bash
 hermes plugins install shaurgon/conport-hermes
@@ -11,23 +11,24 @@ A default ConPort agent is auto-created and bound to your Hermes profile in one 
 
 ## What you get
 
-- **Cross-session memory** backed by ConPort's knowledge graph
-- **Auto-recall** injected before every turn (non-blocking, 2-second budget)
-- **Agent-memory tools (5):** `conport_remember`, `conport_recall`, `conport_forget`, `conport_reflect`, `conport_link_memories`
-- **Reflection** — dedup, supersede stale memories, surface patterns
-- **CLI** — `hermes conport-hermes status | agent | memories | reflect | tail | init`
+- **Tree-shaped persistent memory** — trunk + identity / principles / person-knowledge sub-stores + branches per task / topic (doc-91)
+- **Auto-bootstrap** — `agent_init` fires at session start; trunk roots + counters populate the system prompt
+- **Auto-recall** injected before every turn — composite-scored (0.6·cosine + 0.2·recall_factor + 0.2·foundational_boost), non-blocking, 2-second budget
+- **31 agent_* tools** — write/read/reflect, tree navigation, branch lifecycle, artifacts, lift candidates, promotion conflicts, skill versioning + notes + activations
+- **Non-destructive gravity** — no `forget`; consolidation + supersession happen via tree edges and re-crystallization
+- **CLI** — `hermes conport-hermes status | agent | init | reflect | branches | tail`
 
-> **v0.6.0 — project tools removed (decision-660).** Earlier versions
-> shipped `conport_attach_project` + 14 project-level tools (search,
-> tasks, decisions, progress, documents, blocks). Harness agents work
-> in continuous conversation streams with dozens of context switches
-> per day — session-state with one "attached project" + per-project
-> scope is incompatible with that runtime. Project work
-> (decisions / tasks / docs) lives in the dedicated `conport` skill
-> or direct ConPort MCP/REST calls now, not through this provider.
-> Migration: nothing to do for code that only used the agent-memory
-> tools; code using project tools needs to switch to direct ConPort
-> calls.
+> **v1.0.0 — Agent Memory v2 (breaking).** The flat v1 memory surface
+> (`conport_remember` / `conport_recall` / `conport_forget` /
+> `conport_reflect` / `conport_link_memories`) is gone. Backend data
+> already migrated on 2026-05-20 (task-319) — every memory lives in
+> the new tree shape, indexed under the user's existing
+> `person_knowledge_root` until gravity reshapes it. Client-side
+> migration: pull the new plugin version, restart Hermes; first
+> `agent_init` returns `bootstrap_state='continuing'` and you're set.
+> Code that called the v1 verbs needs to rewrite to `agent_remember` /
+> `agent_recall`. See [CHANGELOG](CHANGELOG.md) for the full
+> verb-by-verb diff.
 
 ## Prerequisites
 
@@ -92,15 +93,48 @@ Non-secret config is stored at `$HERMES_HOME/conport_provider.json`. The API key
 
 ## Tool reference
 
-### Agent memory
+### Writes / reads (the everyday set)
 
 | Tool | Purpose | Prompts that trigger it |
 |------|---------|-------------------------|
-| `conport_remember` | Persist a durable fact, decision, lesson, or pattern | "Remember that…", "Save this decision…", "Note for future me…" |
-| `conport_recall` | Search prior memories (semantic + decay-aware scoring) | "What did we decide about…?", "Have we discussed X before?" |
-| `conport_forget` | Soft-delete (or hard-delete) a memory by id | "Forget memory #42", "That note was wrong, remove it" |
-| `conport_reflect` | Trigger consolidation: dedup, supersede stale, surface patterns | "Reflect on the last week", "Consolidate today's memories" |
-| `conport_link_memories` | Connect two memories with a typed relation | Used implicitly by reflect; agents can also call directly |
+| `agent_remember` | Persist a fact, decision, lesson. `parent_id` null → backend routes via argmax similarity (decision-673). | "Remember that…", "Save this decision…", "Note for future me…" |
+| `agent_recall` | Composite-scored search across the tree. `scope_root_id` narrows to one sub-store. | "What did we decide about…?", "Have we discussed X before?" |
+| `agent_reflect` | Manual gravity on a node: persist merged content + consolidation + crystallisation. Backend never synthesises (decision-692). | "Consolidate this branch", "Re-distil today's thread" |
+
+### Tree navigation
+
+| Tool | Purpose |
+|------|---------|
+| `agent_get_node` | One node + immediate children |
+| `agent_list_branches` | Branches filtered by `state` (active / dormant / closed) |
+| `agent_walk_branch` | Full branch arc + linked artifacts |
+
+### Branch lifecycle
+
+`agent_create_branch`, `agent_close_branch`, `agent_activate_node`, `agent_activate_branch` (decision-680).
+
+### Artifacts
+
+`agent_emit_artifact`, `agent_list_artifacts`, `agent_get_artifact`, `agent_artifact_provenance`, `agent_node_artifacts`. Artifacts don't participate in gravity (decision-664) — use them for branch outputs.
+
+### Cross-pollination + promotion
+
+`agent_review_lift_candidates`, `agent_confirm_lift`, `agent_request_synthesis_assistance` (decisions 670–672).
+`agent_review_promotion_conflicts`, `agent_resolve_promotion_conflict` (decisions 671 + 692).
+
+### Skills
+
+`agent_load_skill`, `agent_list_skills`, `agent_skill_versions`, `agent_get_skill_version`, `agent_get_skill_md`, `agent_skill_notes`, `agent_add_skill_note`, `agent_supersede_skill_note`, `agent_complete_re_crystallization`, `agent_review_re_crystallization`, `agent_skill_activations` (decisions 663 / 675 / task-356).
+
+### Removed in v1.0.0
+
+| Old verb | Replacement |
+|----------|-------------|
+| `conport_remember` | `agent_remember` (parent_id is optional — auto-routing) |
+| `conport_recall` | `agent_recall` (composite scoring, scope_root_id) |
+| `conport_forget` | **No replacement.** Gravity is non-destructive (decision-667); consolidation + supersession at re-crystallization is the path. |
+| `conport_reflect` | `agent_reflect(node_id, new_content)` — per-node, scoped |
+| `conport_link_memories` | **No replacement.** Tree edges (`parent_id`) + trunk promotion provenance replace explicit links. |
 
 ### Project tools — removed in v0.6.0
 
@@ -132,29 +166,40 @@ project-shaped IDE consumers (Claude Code, Cursor, Claude.ai chat);
 exposing it to a harness agent reintroduces exactly the cross-project
 recall hygiene problem v0.6.0 was meant to fix (decision-660).
 
-### Memory shape
+### Node shape
 
-Every memory has:
+Every node in the tree is one record with:
 
-- **`memory_type`** — `fact | feedback | pattern | note | tacit | decision`
-- **`category`** — PARA model: `project | area | resource | archive`
-- **`tags`** — free-form list, used for filtering
-- **`pinned`** — when true, never decays
-- **`entity_ref`** — optional canonical entity name to attach to the knowledge graph
+- **`id`** — per-agent integer
+- **`content`** — free-form text (≤10 000 chars)
+- **`parent_id`** — anchors the node in the tree (null only for the
+  trunk root). Auto-routing on `agent_remember` picks the right
+  ancestor by embedding similarity (decision-673).
+- **`branch_id`** — the origin id this node belongs to (null for
+  trunk-resident nodes).
+- **`is_skill`** — `true` once gravity crystallises the node (decision-663).
+- **`tags`** — free-form list; used for filtering, not for routing.
 
-### Link relations
+Recall hits carry an additional **`composite_score`** (0..1) per
+decision-678: `0.6·cosine + 0.2·recall_factor + 0.2·foundational_boost`.
 
-`related_to | supersedes | derives_from | contradicts | supports`
+### Tree edges
+
+Edges are structural (`parent_id`) and bookkeeping
+(`branch_id`, `lifted_to_trunk_node_id`, `lift_source_origin_ids`).
+There is no separate "link relation" type any more — supersession
+and cross-branch lift are expressed through these fields plus the
+re-crystallisation history on skills.
 
 ## CLI reference
 
 ```bash
-hermes conport-hermes status                  # identity, memory count, last activity
-hermes conport-hermes agent                   # full agent record (JSON)
-hermes conport-hermes memories [--limit N]    # list recent memories
-hermes conport-hermes tail [--interval 2]     # poll-based stream of new memories
-hermes conport-hermes reflect [--scope day]   # manual reflect; scope: day | week | full
-hermes conport-hermes init                    # (re)run the identity wizard
+hermes conport-hermes status                                 # identity + bootstrap state + counters
+hermes conport-hermes agent                                  # full agent record (JSON)
+hermes conport-hermes reflect --node-id N [--new-content STR]  # manual gravity on one node
+hermes conport-hermes branches [--state active|dormant|closed]
+hermes conport-hermes tail [--interval 2]                    # poll active branches
+hermes conport-hermes init                                   # (re)run the identity wizard
 ```
 
 ## Identity model
@@ -177,10 +222,10 @@ To **switch** profiles to a different agent, delete `$HERMES_HOME/conport.json` 
 ## FAQ
 
 **Q. How is this different from Hermes' built-in `MEMORY.md`?**
-ConPort is structured, queryable, and cross-session — every memory has a type, category, tags, decay score, and graph links. `MEMORY.md` is a flat append-only file. They can coexist (different tools), but only one `MemoryProvider` is active at a time.
+ConPort gives you a tree-shaped knowledge graph with composite-scored recall, branches per topic, crystallised skills, and cross-pollination. `MEMORY.md` is a flat append-only file. They can coexist (different tools), but only one `MemoryProvider` is active at a time.
 
 **Q. What happens when reflect runs?**
-The server scans the agent's memories within `scope` (day, week, full), proposes dedup candidates, supersedes stale notes, surfaces emergent patterns, and groups entities. Returned as `AgentReflectResponse`; the agent can review or auto-apply.
+`agent_reflect(node_id, new_content?)` operates on a single node. With `new_content` — backend persists the merged content, refreshes the embedding, runs the consolidation pass, and checks whether the node now meets the skill-crystallisation threshold (decision-663). Without — pure bookkeeping. Backend never synthesises; the agent provides the merged content (decision-692).
 
 **Q. Can I use ConPort with another MemoryProvider at the same time?**
 No — Hermes activates exactly one `MemoryProvider`. You can switch via `hermes memory setup`. (The plain `MEMORY.md` file is a separate mechanism and is unaffected.)
@@ -194,18 +239,19 @@ No — each Hermes profile binds to one ConPort agent UUID, and ConPort's row-le
 **Q. Does this work with ConPort self-hosted?**
 Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
-## Daily reflect (optional)
+## Background consolidation
 
-Hermes' `cron` is LLM-driven and would launch a full session per run; for our
-reflect (a single REST call) that's overkill. Use system cron instead — the
-CLI auto-loads `CONPORT_API_KEY` from `$HERMES_HOME/.env`, so no env wiring:
+v1.0.0 no longer has a `--scope` wide reflect — gravity runs per-node
+(`agent_reflect(node_id, new_content?)`) and the backend's APScheduler
+jobs handle the cross-cutting passes (cross-pollination scan, promotion
+threshold check, re-crystallisation hysteresis) on their own cadence.
+If you want a daily nudge to surface the lift queue / promotion
+conflicts to the user, a thin status cron works:
 
 ```cron
 # crontab -e
-0 3 * * * /home/USER/.hermes/hermes-agent/venv/bin/hermes conport-hermes reflect --scope day > /tmp/conport-reflect.log 2>&1
+0 3 * * * /home/USER/.hermes/hermes-agent/venv/bin/hermes conport-hermes status > /tmp/conport-status.log 2>&1
 ```
-
-Weekly: replace `--scope day` with `--scope week`.
 
 ## Status
 
