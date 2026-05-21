@@ -114,13 +114,16 @@ incompatible with that runtime.
 
 If you need project work from Hermes, call ConPort directly:
 
-- Via MCP — point the harness at `https://api.conport.app/mcp` with
-  your `cport_live_…` key.
+- Via MCP — `https://api.conport.app/mcp` (72 project tools) for
+  project-shaped work; `https://api.conport.app/mcp-agent` (29 agent
+  tools, all `agent_*`) for agent memory. Both accept the same
+  `cport_live_…` key via `Authorization: Bearer` or `X-API-Key`.
 - Via REST — `httpx` against `https://api.conport.app/api/v1/...` with
   `X-API-Key: cport_live_…`.
 
 The `conport` Claude Code skill exposes the full project tool surface
-if you're driving project work from Claude Code rather than Hermes.
+if you're driving project work from Claude Code rather than Hermes;
+the `conport-agent` skill exposes the harness agent surface.
 
 ### Memory shape
 
