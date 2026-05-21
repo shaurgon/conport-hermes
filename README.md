@@ -112,18 +112,25 @@ conversation streams with dozens of context switches per day, not
 project-shaped tasks. The "currently attached project" pattern is
 incompatible with that runtime.
 
-If you need project work from Hermes, call ConPort directly:
+A Hermes agent reaches ConPort via exactly two channels — both
+agent-layer only, never the project surface:
 
-- Via MCP — `https://api.conport.app/mcp` (72 project tools) for
-  project-shaped work; `https://api.conport.app/mcp-agent` (29 agent
-  tools, all `agent_*`) for agent memory. Both accept the same
-  `cport_live_…` key via `Authorization: Bearer` or `X-API-Key`.
-- Via REST — `httpx` against `https://api.conport.app/api/v1/...` with
-  `X-API-Key: cport_live_…`.
+1. **This plugin** — the five `conport_*` tools above, REST under the
+   hood. Default path.
+2. **`/mcp-agent`** — the 29 `agent_*` tools at
+   `https://api.conport.app/mcp-agent` via the
+   [`conport-agent`](../conport-plugin/skills/conport-agent/SKILL.md) skill.
+   Use when you specifically want the richer v2 surface (branches,
+   skill versioning, lift candidates, …) instead of the v1 memory
+   API this plugin wraps.
 
-The `conport` Claude Code skill exposes the full project tool surface
-if you're driving project work from Claude Code rather than Hermes;
-the `conport-agent` skill exposes the harness agent surface.
+Both channels accept the same `cport_live_…` key (`Authorization: Bearer`
+or `X-API-Key`).
+
+**Do not point a Hermes agent at `/mcp`.** The project surface is for
+project-shaped IDE consumers (Claude Code, Cursor, Claude.ai chat);
+exposing it to a harness agent reintroduces exactly the cross-project
+recall hygiene problem v0.6.0 was meant to fix (decision-660).
 
 ### Memory shape
 
