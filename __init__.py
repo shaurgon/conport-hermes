@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 PROVIDER_NAME = "conport"
 
@@ -44,6 +44,31 @@ composite-scored recall is auto-injected before every turn.
 - **skills** — crystallized capabilities. Get cross-loaded
   (`agent_load_skill`) across branches; cross-branch reuse promotes
   them onto the trunk (decision-671).
+
+### The loop
+
+Three kinds of nodes (doc-91 §2.3): **experience** — tail nodes,
+substrate that accumulates freely; **artifacts** — curated outputs
+you synthesise from multiple experience nodes, the deliverable;
+**skills** — frozen mature origins that emerge passively over many
+cycles via gravity.
+
+Task loop:
+
+1. `agent_recall(task_query)` first — not `agent_remember`. Composite
+   score finds relevant nodes across the whole tree.
+2. Walk the branch from the hit. Off-theme child or semantic
+   neighbour in another branch = signal — chase it via
+   `agent_recall` on the fragment.
+3. Write tails freely. Each new fact, observation, intermediate
+   conclusion = one tail. **Don't pre-synthesize into a mega-node** —
+   that starves gravity of signal. Tails are substrate.
+4. When accumulated experience answers the task, emit the artifact:
+   `agent_emit_artifact(branch_id, type, payload, derived_from=[…])`
+   pulling from the experience nodes (across branches if needed)
+   that contributed. The artifact IS the deliverable.
+5. Skill crystallization is the long game, not per-task — origins
+   ripen passively. Don't force it.
 
 ### Writes — classify, then `agent_remember`
 
@@ -148,6 +173,10 @@ promotion replace the second.
 
 ### Checklist
 
+- Task arrived? First move = `agent_recall`, not `agent_remember`?
+- Walked the branch + chased any off-theme child / semantic neighbour?
+- Tails written freely (substrate) without forcing pre-synthesis?
+- Task answer emitted via `agent_emit_artifact` with `derived_from=[…]`?
 - Classified the content as trunk sub-store OR branch before remembering?
 - New research / debug / chronicle theme → `agent_create_branch` instead of writing under `person_knowledge_root`?
 - No secrets in the content?
