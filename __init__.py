@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 PROVIDER_NAME = "conport"
 
@@ -45,14 +45,59 @@ composite-scored recall is auto-injected before every turn.
   (`agent_load_skill`) across branches; cross-branch reuse promotes
   them onto the trunk (decision-671).
 
-### Writes (the only one you usually need)
+### Writes — classify, then `agent_remember`
 
-`agent_remember(content)` — leave `parent_id` null and the backend picks
-the best ancestor by embedding similarity (argmax routing,
-decision-673). Anchor it explicitly only when you mean to:
-`parent_id = identity_root_id` for a self-statement,
-`parent_id = principles_root_id` for a rule, branch id for an episodic
-note inside a specific thread.
+Argmax routing is fast but memoryless about intent — across the trunk
+it silently dumps everything into the largest cluster (usually
+`person_knowledge_root`). Before each `agent_remember`, decide between
+the two kinds of containers:
+
+- **Trunk sub-stores** (always-loaded): `identity_root` (who I am),
+  `principles_root` (declarative rules), `person_knowledge_root`
+  (stable facts about user/world).
+- **Branches** (contextual): one per task / topic / research theme.
+  Created via `agent_create_branch` or emergently when
+  `routing.decision='new_branch'`.
+
+There is no third level of trunk sub-store. Anything that doesn't fit
+one of the three belongs in a branch.
+
+Decision tree:
+
+| Question | Action |
+|---|---|
+| Self-statement / persona fact? | `agent_remember(content, parent_id=identity_root_id)` |
+| Declarative cross-context rule or pitfall? | `parent_id=principles_root_id` |
+| Stable fact about the user / world? | `parent_id=person_knowledge_root_id` |
+| Tied to the current active task / thread? | `parent_id=active_branch_id` — let argmax place within it |
+| New topic with no existing branch? | `agent_create_branch(name, anchor=trunk_root_id)` first, then write with the new id |
+
+Research papers, debug chronicles, tool history — all of these
+belong in **branches**, not in `person_knowledge_root`. Use one
+branch per research theme (`research:agent-memory`,
+`research:mcp-security`); each paper becomes a child of that origin
+and gravity may eventually crystallize a synthesis skill.
+
+`routing.decision='uncertain'` with cross-container alternatives
+means the classification was off — re-call with the correct
+`parent_id`. Inside the right container, accept argmax without
+overriding.
+
+### Trunk normalization sweep
+
+Every N consolidation cycles (or once a week), walk
+`person_knowledge_root` direct children with `agent_walk_branch` and
+re-classify anything that is not a genuine fact about the user/world:
+
+- Declarative rule → move to `principles_root`.
+- Persona/self-fact → move to `identity_root`.
+- Episodic content (research, debug log, tool chronicle) → find or
+  create the appropriate branch, re-write there. Supersede the
+  original under `person_knowledge_root`.
+
+Same audit for `identity_root` and `principles_root` if they
+accumulated unrelated content. The goal is on-theme content per
+sub-store; episodic stuff lives in branches.
 
 ### Reads
 
@@ -103,10 +148,12 @@ promotion replace the second.
 
 ### Checklist
 
-- New learning saved with `agent_remember`?
+- Classified the content as trunk sub-store OR branch before remembering?
+- New research / debug / chronicle theme → `agent_create_branch` instead of writing under `person_knowledge_root`?
 - No secrets in the content?
 - `pending_lift_candidates` > 0 → review queue?
 - `pending_promotion_conflicts` > 0 → resolve them?
+- Trunk normalization sweep run in the last N cycles?
 """
 
 
