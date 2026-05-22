@@ -215,7 +215,7 @@ To **switch** profiles to a different agent, delete `$HERMES_HOME/conport.json` 
 | `401 Unauthorized` on first call | Bad or rotated API key | Open `$HERMES_HOME/.env`, replace `CONPORT_API_KEY`; or rotate via the ConPort dashboard |
 | `No identity at …/conport.json` | Wizard never ran | `hermes conport-hermes init` |
 | `404` on `/agents/<uuid>` | Agent was deleted server-side | `rm $HERMES_HOME/conport.json && hermes conport-hermes init` |
-| Recall returns nothing in fresh session | Brand-new agent — memory is empty | Use `conport_remember` a few times; reflect pulls patterns later |
+| Recall returns nothing in fresh session | Brand-new agent — memory is empty | Use `agent_remember` a few times; gravity surfaces patterns later |
 | Recall is slow / times out | Network to ConPort exceeds 2s | Bump `recall_timeout_seconds` (but stays non-blocking by design) |
 | Tool calls never reach ConPort | Provider deactivated | `hermes memory status` — confirm `conport` is the active provider |
 

@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 PROVIDER_NAME = "conport"
 
@@ -184,6 +184,76 @@ promotion replace the second.
 - `pending_promotion_conflicts` > 0 → resolve them?
 - Trunk normalization sweep run in the last N cycles?
 """
+
+
+def _truncate(text: str, limit: int = 120) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _format_init_block(payload: dict[str, Any]) -> str | None:
+    """Render the live `agent_init` payload (decision-681) into a markdown
+    block appended to the static system prompt.
+
+    Without this the LLM sees the routing rules but not the actual root IDs
+    or what's already in the trunk — see doc-95 / task-432.
+    """
+    if not payload:
+        return None
+
+    lines: list[str] = ["", "### Current state (from agent_init at session start)", ""]
+
+    root_keys = (
+        ("identity_root_id", "identity_root_id"),
+        ("principles_root_id", "principles_root_id"),
+        ("person_knowledge_root_id", "person_knowledge_root_id"),
+        ("trunk_root_id", "trunk_root_id"),
+    )
+    roots = [(label, payload[key]) for key, label in root_keys if payload.get(key) is not None]
+    if roots:
+        lines.append("Root IDs — pass as `parent_id` on `agent_remember`:")
+        for label, value in roots:
+            lines.append(f"- `{label}` = {value}")
+        lines.append("")
+
+    trunk_nodes = payload.get("trunk_context") or []
+    if trunk_nodes:
+        lines.append("Trunk context (always loaded — don't re-store these facts):")
+        for node in trunk_nodes:
+            node_id = node.get("id", "?")
+            role = node.get("role") or "node"
+            content = _truncate(str(node.get("content") or ""))
+            children = node.get("direct_children_count")
+            suffix = f" ({children} children)" if children else ""
+            lines.append(f"- [#{node_id} {role}]{suffix} {content}")
+        lines.append("")
+
+    branches = payload.get("active_branches") or []
+    if branches:
+        lines.append("Active branches — reuse instead of creating duplicates:")
+        for b in branches:
+            bid = b.get("branch_id") or b.get("id") or "?"
+            state = b.get("branch_state") or b.get("state") or "active"
+            preview = _truncate(str(b.get("origin_content_preview") or b.get("name") or ""), 80)
+            n = b.get("direct_children_count")
+            suffix = f", {n} nodes" if isinstance(n, int) else ""
+            lines.append(f"- #{bid} ({state}{suffix}) {preview}")
+        lines.append("")
+
+    lift = payload.get("pending_lift_candidates")
+    conflicts = payload.get("pending_promotion_conflicts")
+    if (isinstance(lift, int) and lift > 0) or (isinstance(conflicts, int) and conflicts > 0):
+        parts: list[str] = []
+        if isinstance(lift, int) and lift > 0:
+            parts.append(f"{lift} lift candidate(s) → `agent_review_lift_candidates`")
+        if isinstance(conflicts, int) and conflicts > 0:
+            parts.append(f"{conflicts} promotion conflict(s) → `agent_review_promotion_conflicts`")
+        lines.append("Pending review: " + "; ".join(parts) + ".")
+        lines.append("")
+
+    if len(lines) <= 3:
+        return None
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _read_api_key_from_env_file(hermes_home: str) -> str | None:
@@ -398,6 +468,10 @@ class ConPortMemoryProvider:
     def system_prompt_block(self) -> str | None:
         if not self._agent_uuid:
             return None
+        if self._init_payload:
+            dynamic = _format_init_block(self._init_payload)
+            if dynamic:
+                return _SYSTEM_PROMPT_BLOCK + "\n" + dynamic
         return _SYSTEM_PROMPT_BLOCK
 
     def prefetch(self, query: str, **_kwargs: Any) -> str | None:
@@ -431,9 +505,38 @@ class ConPortMemoryProvider:
         assistant_content: str,
         **_kwargs: Any,
     ) -> None:
-        # Accept and ignore extra Hermes runtime kwargs (e.g. session_id
-        # introduced in newer ABC revisions). No implicit writes — agent uses
-        # explicit conport_remember tool.
+        """Persist the just-completed exchange as substrate.
+
+        Hermes is a chat harness, not a code agent — every user turn
+        carries information (facts, observations, episodes) that has to
+        enter memory or it's lost. We write the (user, assistant) pair
+        as one tail node and let argmax routing (decision-673) place it
+        under the right ancestor; gravity consolidates / supersedes it
+        later (doc-91 §2.3).
+
+        Substrate layer ≠ artifact layer. Curated outputs still land via
+        ``agent_emit_artifact``; this is the raw conversation feed.
+
+        Best-effort: same budget as ``prefetch`` (``_recall_timeout``),
+        exceptions and timeouts swallowed so a memory hiccup never
+        stalls the turn. Empty exchanges (both sides whitespace-only)
+        are skipped — nothing to remember.
+        """
+        if not (self._client and self._agent_uuid):
+            return None
+        u = (user_content or "").strip()
+        a = (assistant_content or "").strip()
+        if not u and not a:
+            return None
+        content = f"User: {u}\nAssistant: {a}"
+        try:
+            self._client.remember(
+                agent_uuid=self._agent_uuid,
+                content=content,
+                timeout=self._recall_timeout,
+            )
+        except Exception:  # noqa: BLE001 — non-blocking is required
+            return None
         return None
 
     def on_session_end(self, messages: list[dict[str, Any]], **_kwargs: Any) -> None:
