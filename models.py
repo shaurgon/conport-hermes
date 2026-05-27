@@ -1,12 +1,7 @@
-"""TypedDict shapes for ConPort REST responses and on-disk config.
+"""TypedDict shapes for ConPort REST/MCP responses and on-disk config.
 
-Kept narrow on purpose: only the fields conport-hermes actually reads.
-Server may add more — ``total=False`` lets unknown keys flow through.
-
-v1.0.0: project-shaped records were removed in v0.6.0; v1 flat-memory
-records (MemoryRecord/MemoryLinkRecord/ReflectResult v1) removed in
-v1.0.0 alongside the move to Agent Memory v2's tree surface
-(decisions 660–682). See ``client.py`` for the v2 wire shapes.
+v2.0.0: rewritten for Agent Memory v3 (sphere graph) + Workspace v1
+(event-sourced records). All v2 tree-based types removed.
 """
 
 from __future__ import annotations
@@ -19,77 +14,63 @@ class AgentRecord(TypedDict, total=False):
     agent_uuid: str
     name: str
     type: str
-    memory_count: int
 
 
-class TrunkContextNode(TypedDict, total=False):
+# ── Memory v3 (sphere graph) ────────────────────────────────────────
+
+class InitAnchor(TypedDict, total=False):
     id: int
-    role: str  # trunk_root | identity_root | principles_root | person_knowledge_root
     content: str
-    direct_children_count: int
+    created_at: str
+
+
+class MatureCommunity(TypedDict, total=False):
+    community_id: int
+    node_count: int
+    avg_edge_weight: float
+    frozen_count: int
+    central_nodes: list[dict[str, Any]]
+    hint: str
+
+
+class BorderlineNode(TypedDict, total=False):
+    node_id: int
+    content_preview: str
+    communities_visited: list[int]
+
+
+class PendingExtraction(TypedDict, total=False):
+    buffer_size: int
+    message_ids: list[int]
 
 
 class AgentInitPayload(TypedDict, total=False):
-    """Response of ``POST /agents/{uuid}/init`` (decision-681)."""
     agent_uuid: str
+    owner_id: str
     name: str
     type: str
     bootstrap_state: str  # 'new' | 'continuing'
-    trunk_root_id: int
-    identity_root_id: int
-    principles_root_id: int
-    person_knowledge_root_id: int
-    current_active_node_id: int
-    trunk_context: list[TrunkContextNode]
-    active_branches: list[dict[str, Any]]
-    recently_crystallized_skills: list[dict[str, Any]]
-    pending_lift_candidates: int
-    pending_promotion_conflicts: int
+    identity: list[InitAnchor]
+    principles: list[InitAnchor]
+    broadcast_facts: list[InitAnchor]
+    mature_communities: list[MatureCommunity]
+    borderline_nodes: list[BorderlineNode]
+    pending_extraction: PendingExtraction | None
     summary: str
 
 
-class AgentNodeChild(TypedDict, total=False):
-    id: int
-    content_preview: str
-    branch_id: int | None
-    is_skill: bool
-
-
-class AgentNodeResponse(TypedDict, total=False):
-    id: int
-    agent_uuid: str
-    content: str
-    tags: list[str]
-    parent_id: int | None
-    depth: int | None
-    branch_id: int | None
-    branch_state: str | None
-    is_skill: bool
-    promotion_status: str
-    direct_children_count: int
-    consolidation_count: int
-    children: list[AgentNodeChild]
-
-
-class BranchSummary(TypedDict, total=False):
-    branch_id: int
-    branch_state: str
-    origin_content_preview: str
-    direct_children_count: int
-    last_content_change_at: str | None
-    is_skill: bool
-
-
 class RecallHit(TypedDict, total=False):
-    id: int
+    node_id: int
     content: str
-    parent_id: int | None
-    branch_id: int | None
-    depth: int | None
-    is_skill: bool
+    meta_type: str
+    visibility: str
+    frozen_community_id: int | None
+    created_by_agent_uuid: str
+    created_at: str
     similarity: float
-    composite_score: float
 
+
+# ── Config ───────────────────────────────────────────────────────────
 
 class ProviderConfig(TypedDict, total=False):
     api_base_url: str

@@ -15,174 +15,172 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "1.3.0"
+__version__ = "2.0.0"
 
 PROVIDER_NAME = "conport"
 
 
 _SYSTEM_PROMPT_BLOCK = """\
-## ConPort — Agent Memory v2
+## ConPort — Agent Memory v3 (Sphere Graph) + Workspace
 
-Your persistent memory is a **tree**, not a flat list (decisions 660–682).
-Identity is already bound; the init payload (trunk roots, active branches,
-pending lift/conflict counts) is auto-fetched at session start and a
-composite-scored recall is auto-injected before every turn.
+Your persistent memory is a **sphere graph** — a flat, typed node graph
+with typed edges. No tree, no parent_id, no branches. Identity and
+principles are node types, not structural roots. Topic clusters emerge via
+edge density and Louvain community detection; skills crystallize from dense
+stable communities.
 
-> Project tools (decisions, tasks, documents, search) are intentionally
-> **not** here: the agent layer is structurally separate from project
-> memory (decision-660). For project work use the `conport` skill or
-> direct REST against `/api/v1/...` — not this provider.
+> Project tools (decisions, tasks, documents) are NOT here — the agent
+> layer is structurally separate from project memory. For project work
+> use the `conport` skill or REST directly.
 
-### Anatomy
+---
 
-- **trunk_root** + three reserved sub-stores: `identity_root` (who you
-  are), `principles_root` (rules you follow), `person_knowledge_root`
-  (facts about the user / world).
-- **branches** — episodic threads off trunk_root. One per long-running
-  task / topic. Origins ripen via gravity (decision-662) and can
-  crystallize into **skills** (decision-663).
-- **skills** — crystallized capabilities. Get cross-loaded
-  (`agent_load_skill`) across branches; cross-branch reuse promotes
-  them onto the trunk (decision-671).
+### Core model
 
-### The loop
+**Node meta_types** (6):
 
-Three kinds of nodes (doc-91 §2.3): **experience** — tail nodes,
-substrate that accumulates freely; **artifacts** — curated outputs
-you synthesise from multiple experience nodes, the deliverable;
-**skills** — frozen mature origins that emerge passively over many
-cycles via gravity.
+| meta_type | What it stores | Default visibility |
+|---|---|---|
+| `identity` | Self-statements about the agent | `private` (forced) |
+| `principle` | Declarative rules, safety rails | `private` (forced) |
+| `fact` | Atomic world/person knowledge | `shared` |
+| `observation` | Empirical events, things that happened | `shared` |
+| `skill` | Crystallized reusable patterns | `broadcast` |
+| `artifact` | Produced outputs (lists, drafts, tables) | `shared` |
 
-Task loop:
+**Edge types** (6):
 
-1. `agent_recall(task_query)` first — not `agent_remember`. Composite
-   score finds relevant nodes across the whole tree.
-2. Walk the branch from the hit. Off-theme child or semantic
-   neighbour in another branch = signal — chase it via
-   `agent_recall` on the fragment.
-3. Write tails freely. Each new fact, observation, intermediate
-   conclusion = one tail. **Don't pre-synthesize into a mega-node** —
-   that starves gravity of signal. Tails are substrate.
-4. When accumulated experience answers the task, emit the artifact:
-   `agent_emit_artifact(branch_id, type, payload, derived_from=[…])`
-   pulling from the experience nodes (across branches if needed)
-   that contributed. The artifact IS the deliverable.
-5. Skill crystallization is the long game, not per-task — origins
-   ripen passively. Don't force it.
-
-### Writes — classify, then `agent_remember`
-
-Argmax routing is fast but memoryless about intent — across the trunk
-it silently dumps everything into the largest cluster (usually
-`person_knowledge_root`). Before each `agent_remember`, decide between
-the two kinds of containers:
-
-- **Trunk sub-stores** (always-loaded): `identity_root` (who I am),
-  `principles_root` (declarative rules), `person_knowledge_root`
-  (stable facts about user/world).
-- **Branches** (contextual): one per task / topic / research theme.
-  Created via `agent_create_branch` or emergently when
-  `routing.decision='new_branch'`.
-
-There is no third level of trunk sub-store. Anything that doesn't fit
-one of the three belongs in a branch.
-
-Decision tree:
-
-| Question | Action |
+| edge_type | Meaning |
 |---|---|
-| Self-statement / persona fact? | `agent_remember(content, parent_id=identity_root_id)` |
-| Declarative cross-context rule or pitfall? | `parent_id=principles_root_id` |
-| Stable fact about the user / world? | `parent_id=person_knowledge_root_id` |
-| Tied to the current active task / thread? | `parent_id=active_branch_id` — let argmax place within it |
-| New topic with no existing branch? | `agent_create_branch(name, anchor=trunk_root_id)` first, then write with the new id |
+| `semantic` | Conceptual similarity |
+| `derived_from` | Provenance (artifact ← observations) |
+| `temporal` | A happened before B |
+| `skill_of` | Skill ← source observations/facts |
+| `competing_view` | Two nodes disagree or offer alternatives |
+| `supersedes` | New node replaces old |
 
-Research papers, debug chronicles, tool history — all of these
-belong in **branches**, not in `person_knowledge_root`. Use one
-branch per research theme (`research:agent-memory`,
-`research:mcp-security`); each paper becomes a child of that origin
-and gravity may eventually crystallize a synthesis skill.
+---
 
-`routing.decision='uncertain'` with cross-container alternatives
-means the classification was off — re-call with the correct
-`parent_id`. Inside the right container, accept argmax without
-overriding.
+### Visibility model
 
-### Trunk normalization sweep
+| Visibility | Who sees it | When to use |
+|---|---|---|
+| `private` | Only this agent | Identity, principles, scratch. Forced for identity/principle. |
+| `shared` | All agents of the same owner | Facts, observations, artifacts (default). |
+| `broadcast` | All agents, always pre-loaded | Crystallized skills. The collective layer. |
 
-Every N consolidation cycles (or once a week), walk
-`person_knowledge_root` direct children with `agent_walk_branch` and
-re-classify anything that is not a genuine fact about the user/world:
+---
 
-- Declarative rule → move to `principles_root`.
-- Persona/self-fact → move to `identity_root`.
-- Episodic content (research, debug log, tool chronicle) → find or
-  create the appropriate branch, re-write there. Supersede the
-  original under `person_knowledge_root`.
+### Memory vs Workspace — choose the right store
 
-Same audit for `identity_root` and `principles_root` if they
-accumulated unrelated content. The goal is on-theme content per
-sub-store; episodic stuff lives in branches.
+| What | Where |
+|---|---|
+| "User prefers city X" | memory (`fact` node) |
+| "User asked about moving" | memory (`observation`) |
+| City as entity with scores | workspace (`agent_entity_upsert`) |
+| News about that city | workspace (`agent_event_record`) |
+| Daily refresh skill run | workspace (`agent_run_start` / `agent_run_finish`) |
+| Current city score | workspace (`agent_projection_record` / `agent_projection_current`) |
+| "observation mentioned a city" | cross-link (`agent_link_node_to_entity`) |
 
-### Reads
+Rule: **structured fields + history ordered in time → workspace**.
+Free text + embedding for recall → memory.
 
-- `agent_recall(query)` — composite-scored search across your whole
-  tree. Pass `scope_root_id` to narrow to one sub-store.
-- `agent_get_node(node_id)` / `agent_walk_branch(branch_id)` — explicit
-  navigation when you already know the anchor.
-- `agent_list_branches(state)` — what's active right now.
+---
 
-### Reflection
+### Writing memory
 
-- `agent_reflect(node_id, new_content)` — manual gravity. Pass the
-  merged content; backend re-embeds + runs consolidation +
-  crystallisation checks. Backend never synthesises — you provide the
-  merge (decision-692).
+**Path 1 — conversational harness (Hermes):**
 
-### Cross-pollination + promotion
+1. `agent_chat_turn(role, text)` — record each message as it happens.
+2. When the response includes `extraction_signal: true` (buffer >= 10
+   un-extracted messages), call `agent_extract_thread(message_ids)`
+   IMMEDIATELY before your next `agent_remember`.
+3. Extraction distills the conversation into typed nodes + edges.
 
-When you see `pending_lift_candidates` in `agent_init`:
-1. `agent_review_lift_candidates` → matched origins + scores
-2. `agent_confirm_lift(candidate_id, action='accept', synthesized_content=..., target_trunk_parent_id=...)`
+**Do NOT skip extraction when the signal fires.**
 
-When you see `pending_promotion_conflicts`:
-1. `agent_review_promotion_conflicts` → conflict skill + nearest trunk neighbours
-2. `agent_resolve_promotion_conflict(skill_id, action='promote' | 'revert')`
+**Path 2 — direct node write (explicit knowledge):**
+
+```
+agent_remember(
+    meta_type='fact',
+    content='...',
+    visibility='shared',          # optional
+    edges=[                       # optional — connect immediately
+        {"target_node_id": 42, "edge_type": "semantic"},
+        {"target_node_id": 17, "edge_type": "derived_from"}
+    ]
+)
+```
+
+Write freely — small atomic nodes are better than mega-nodes.
+Edge density is what creates topic structure.
+
+---
+
+### Reading memory
+
+- `agent_recall(query, limit, scope)` — semantic search respecting
+  visibility. Always call this FIRST before answering any question
+  about prior context.
+- `agent_get_subgraph(root_node_id, depth, edge_types)` — BFS outward
+  from a node. Use after recall to explore a topic neighbourhood.
+
+---
+
+### Skill emergence
+
+Skills emerge from stable, dense communities detected by Louvain:
+
+1. Backend surfaces mature communities in `agent_init` response as
+   `mature_communities`.
+2. Review the `central_nodes` in each community.
+3. If the pattern deserves a skill, synthesize the content yourself,
+   then call `agent_promote_skill(community_id, content)`.
+
+**No auto-promotion.** Backend surfaces hints; you decide and write.
+
+---
+
+### Workspace
+
+**Entity** — typed domain object with JSONB attrs:
+- `agent_entity_upsert` / `agent_entity_get` / `agent_entity_list`
+
+**Event** — append-only, immutable:
+- `agent_event_record` / `agent_event_query`
+
+**Run** — skill execution trace with params + outputs:
+- `agent_run_start` / `agent_run_finish`
+
+**Projection** — derived snapshot with provenance:
+- `agent_projection_record` / `agent_projection_current` / `agent_projection_history`
+
+**Cross-link** — connect memory node to workspace entity:
+- `agent_link_node_to_entity`
+
+---
 
 ### NEVER store
 
 Secrets, passwords, API keys, tokens — even partially. Reference where
 the value lives (`$API_KEY` env var) instead.
 
-### Quality
-
-1. Extract the insight, not the story. Bad: "Task X completed: did Y,
-   then Z." Good: "POST /api/agents/{id}/skills/sync — `desiredSkills`
-   defaults to null, must be passed explicitly."
-2. Don't pre-search. Routing picks the right parent + gravity
-   consolidates duplicates with `consolidation_count`. Just write.
-3. Don't try to delete. Memory is non-destructive by design
-   (decision-667); supersession happens via consolidation +
-   re-crystallisation, not `forget`.
-
-### Sunset (no v2 equivalent)
-
-`conport_forget` and explicit `conport_link_memories` are gone.
-Non-destructive gravity replaces the first; tree edges + trunk
-promotion replace the second.
+---
 
 ### Checklist
 
-- Task arrived? First move = `agent_recall`, not `agent_remember`?
-- Walked the branch + chased any off-theme child / semantic neighbour?
-- Tails written freely (substrate) without forcing pre-synthesis?
-- Task answer emitted via `agent_emit_artifact` with `derived_from=[…]`?
-- Classified the content as trunk sub-store OR branch before remembering?
-- New research / debug / chronicle theme → `agent_create_branch` instead of writing under `person_knowledge_root`?
-- No secrets in the content?
-- `pending_lift_candidates` > 0 → review queue?
-- `pending_promotion_conflicts` > 0 → resolve them?
-- Trunk normalization sweep run in the last N cycles?
+- `agent_init` done?
+- `bootstrap_state` checked? (new → write identity + principles first)
+- Task arrived? First move = `agent_recall`, not `agent_remember`.
+- `extraction_signal` fired → `agent_extract_thread` called IMMEDIATELY?
+- `mature_communities` present → reviewed, decided promote or skip?
+- `private` vs `shared` vs `broadcast` — chosen correctly?
+- No secrets in memory or workspace content?
+- Structured domain data → workspace (entity + event + projection), not memory?
+- Workflow execution → `agent_run_start` / `agent_run_finish` wrapping it?
+- Derived result → `agent_projection_record` with `derived_from_event_ids`?
 """
 
 
@@ -192,63 +190,102 @@ def _truncate(text: str, limit: int = 120) -> str:
 
 
 def _format_init_block(payload: dict[str, Any]) -> str | None:
-    """Render the live `agent_init` payload (decision-681) into a markdown
-    block appended to the static system prompt.
+    """Render the live ``agent_init`` (v3) payload into a markdown block
+    appended to the static system prompt.
 
-    Without this the LLM sees the routing rules but not the actual root IDs
-    or what's already in the trunk — see doc-95 / task-432.
+    Surfaces identity anchors, principles anchors, broadcast facts,
+    mature communities (skill promotion candidates), borderline nodes,
+    and pending extraction state so the LLM has the concrete session
+    context, not just the routing rules.
     """
     if not payload:
         return None
 
     lines: list[str] = ["", "### Current state (from agent_init at session start)", ""]
 
-    root_keys = (
-        ("identity_root_id", "identity_root_id"),
-        ("principles_root_id", "principles_root_id"),
-        ("person_knowledge_root_id", "person_knowledge_root_id"),
-        ("trunk_root_id", "trunk_root_id"),
-    )
-    roots = [(label, payload[key]) for key, label in root_keys if payload.get(key) is not None]
-    if roots:
-        lines.append("Root IDs — pass as `parent_id` on `agent_remember`:")
-        for label, value in roots:
-            lines.append(f"- `{label}` = {value}")
+    bootstrap_state = payload.get("bootstrap_state")
+    agent_name = payload.get("name") or payload.get("agent_uuid", "")
+    if bootstrap_state:
+        suffix = " — write identity + principles first" if bootstrap_state == "new" else ""
+        lines.append(f"bootstrap_state: `{bootstrap_state}`{suffix}")
+        if agent_name:
+            lines.append(f"agent: {agent_name}")
         lines.append("")
 
-    trunk_nodes = payload.get("trunk_context") or []
-    if trunk_nodes:
-        lines.append("Trunk context (always loaded — don't re-store these facts):")
-        for node in trunk_nodes:
-            node_id = node.get("id", "?")
-            role = node.get("role") or "node"
+    identity_anchors = payload.get("identity") or []
+    if identity_anchors:
+        lines.append("Identity anchors (private, always loaded):")
+        for node in identity_anchors:
+            nid = node.get("id", "?")
             content = _truncate(str(node.get("content") or ""))
-            children = node.get("direct_children_count")
-            suffix = f" ({children} children)" if children else ""
-            lines.append(f"- [#{node_id} {role}]{suffix} {content}")
+            lines.append(f"- [#{nid}] {content}")
         lines.append("")
 
-    branches = payload.get("active_branches") or []
-    if branches:
-        lines.append("Active branches — reuse instead of creating duplicates:")
-        for b in branches:
-            bid = b.get("branch_id") or b.get("id") or "?"
-            state = b.get("branch_state") or b.get("state") or "active"
-            preview = _truncate(str(b.get("origin_content_preview") or b.get("name") or ""), 80)
-            n = b.get("direct_children_count")
-            suffix = f", {n} nodes" if isinstance(n, int) else ""
-            lines.append(f"- #{bid} ({state}{suffix}) {preview}")
+    principles_anchors = payload.get("principles") or []
+    if principles_anchors:
+        lines.append("Principle anchors (private, always loaded):")
+        for node in principles_anchors:
+            nid = node.get("id", "?")
+            content = _truncate(str(node.get("content") or ""))
+            lines.append(f"- [#{nid}] {content}")
         lines.append("")
 
-    lift = payload.get("pending_lift_candidates")
-    conflicts = payload.get("pending_promotion_conflicts")
-    if (isinstance(lift, int) and lift > 0) or (isinstance(conflicts, int) and conflicts > 0):
-        parts: list[str] = []
-        if isinstance(lift, int) and lift > 0:
-            parts.append(f"{lift} lift candidate(s) → `agent_review_lift_candidates`")
-        if isinstance(conflicts, int) and conflicts > 0:
-            parts.append(f"{conflicts} promotion conflict(s) → `agent_review_promotion_conflicts`")
-        lines.append("Pending review: " + "; ".join(parts) + ".")
+    broadcast_facts = payload.get("broadcast_facts") or []
+    if broadcast_facts:
+        lines.append("Broadcast facts (collective layer, always loaded):")
+        for node in broadcast_facts:
+            nid = node.get("id", "?")
+            content = _truncate(str(node.get("content") or ""))
+            lines.append(f"- [#{nid}] {content}")
+        lines.append("")
+
+    mature_communities = payload.get("mature_communities") or []
+    if mature_communities:
+        lines.append(
+            f"{len(mature_communities)} mature community/communities — review for skill promotion:"
+        )
+        for c in mature_communities:
+            cid = c.get("community_id", "?")
+            n = c.get("node_count")
+            hint = _truncate(str(c.get("hint") or ""), 80)
+            central = c.get("central_nodes") or []
+            central_preview = ", ".join(
+                f"#{cn.get('id', '?')}" for cn in central[:3]
+            )
+            size_str = f", {n} nodes" if isinstance(n, int) else ""
+            lines.append(
+                f"- community #{cid}{size_str}, central: [{central_preview}] {hint}"
+            )
+        lines.append("→ Call `agent_promote_skill(community_id, content)` if appropriate.")
+        lines.append("")
+
+    borderline_nodes = payload.get("borderline_nodes") or []
+    if borderline_nodes:
+        lines.append(
+            f"{len(borderline_nodes)} borderline node(s) with unstable community membership "
+            "(add explicit edges to disambiguate if important):"
+        )
+        for bn in borderline_nodes[:5]:
+            nid = bn.get("node_id", "?")
+            preview = _truncate(str(bn.get("content_preview") or ""), 80)
+            communities = bn.get("communities_visited") or []
+            lines.append(f"- #{nid} {preview} (communities: {communities})")
+        lines.append("")
+
+    pending = payload.get("pending_extraction")
+    if pending and isinstance(pending, dict):
+        buf_size = pending.get("buffer_size", 0)
+        msg_ids = pending.get("message_ids") or []
+        if buf_size and buf_size >= 10:
+            lines.append(
+                f"EXTRACTION SIGNAL: {buf_size} un-extracted messages. "
+                f"Call `agent_extract_thread(message_ids={msg_ids})` IMMEDIATELY."
+            )
+            lines.append("")
+
+    summary = payload.get("summary")
+    if summary:
+        lines.append(f"Summary: {summary}")
         lines.append("")
 
     if len(lines) <= 3:
@@ -269,6 +306,8 @@ def _read_api_key_from_env_file(hermes_home: str) -> str | None:
     except OSError:
         return None
     return None
+
+
 DEFAULT_API_BASE = "https://api.conport.app"
 IDENTITY_FILENAME = "conport.json"
 PROVIDER_CONFIG_FILENAME = "conport_provider.json"
@@ -287,9 +326,9 @@ class ConPortMemoryProvider:
         self._platform: str | None = None
         self._recall_limit: int = 5
         self._recall_timeout: float = 2.0
-        # Cached agent_init payload (decision-681). Populated in initialize()
-        # so prefetch / handle_tool_call can read trunk-root ids without a
-        # second round-trip per turn.
+        # Cached agent_init payload. Populated in initialize() so
+        # prefetch / system_prompt_block can read v3 anchors + community
+        # hints without a second round-trip per turn.
         self._init_payload: dict[str, Any] | None = None
 
     @property
@@ -366,14 +405,14 @@ class ConPortMemoryProvider:
 
         We capture: hermes_home (storage scope), agent_context (writes-allowed
         gate), agent_identity (profile name), platform (origin tag).
-        Other kwargs (user_id, chat_id, ...) are accepted but unused in v1.0.
+        Other kwargs (user_id, chat_id, ...) are accepted but unused.
 
         After loading config + identity we fire ``agent_init`` once per
-        session (decision-681) to materialise the tree if this is a new
-        agent and to refresh the cached trunk-root ids used by recall
-        scoping. Failures here are non-fatal — Hermes still gets the
-        tool surface; the agent will hit the backend on the first
-        explicit call.
+        session to receive the v3 payload: identity anchors, principles
+        anchors, broadcast facts, mature communities (skill promotion
+        candidates), borderline nodes, pending extraction state.
+        Failures here are non-fatal — the agent still gets the full tool
+        surface and will hit the backend on the first explicit call.
         """
         self._session_id = session_id
         self._hermes_home = kwargs.get("hermes_home") or os.environ.get(
@@ -490,12 +529,15 @@ class ConPortMemoryProvider:
             return None
         lines: list[str] = []
         for h in hits:
-            # RecallHit has id / content / similarity / composite_score
-            # (the last one is the canonical sort key, decision-678).
-            score = h.get("composite_score")
-            if score is None:
-                score = h.get("similarity")
-            prefix = f"- (#{h.get('id', '?')}" + (f", {score:.2f}" if isinstance(score, (int, float)) else "") + ")"
+            # RecallHit has node_id / content / meta_type / similarity
+            score = h.get("similarity")
+            node_id = h.get("node_id") or h.get("id")
+            meta = h.get("meta_type", "")
+            prefix = (
+                f"- (#{node_id}, {meta}"
+                + (f", {score:.2f}" if isinstance(score, (int, float)) else "")
+                + ")"
+            )
             lines.append(f"{prefix} {h.get('content', '')}")
         return "Relevant ConPort memories:\n" + "\n".join(lines)
 
@@ -505,22 +547,18 @@ class ConPortMemoryProvider:
         assistant_content: str,
         **_kwargs: Any,
     ) -> None:
-        """Persist the just-completed exchange as substrate.
+        """Persist the just-completed exchange into the chat turn buffer.
 
-        Hermes is a chat harness, not a code agent — every user turn
-        carries information (facts, observations, episodes) that has to
-        enter memory or it's lost. We write the (user, assistant) pair
-        as one tail node and let argmax routing (decision-673) place it
-        under the right ancestor; gravity consolidates / supersedes it
-        later (doc-91 §2.3).
+        Calls agent_chat_turn for both the user message and the assistant
+        response so the buffer accumulates for extraction. When the buffer
+        reaches the extraction threshold (>= 10 un-extracted messages) the
+        backend will fire extraction_signal=true on the next chat_turn call;
+        the agent then calls agent_extract_thread via the explicit tool surface
+        on its next turn.
 
-        Substrate layer ≠ artifact layer. Curated outputs still land via
-        ``agent_emit_artifact``; this is the raw conversation feed.
-
-        Best-effort: same budget as ``prefetch`` (``_recall_timeout``),
-        exceptions and timeouts swallowed so a memory hiccup never
-        stalls the turn. Empty exchanges (both sides whitespace-only)
-        are skipped — nothing to remember.
+        Best-effort: same budget as prefetch (_recall_timeout). Exceptions
+        and timeouts are swallowed so a memory hiccup never stalls a turn.
+        Empty exchanges (both sides whitespace-only) are skipped.
         """
         if not (self._client and self._agent_uuid):
             return None
@@ -528,13 +566,19 @@ class ConPortMemoryProvider:
         a = (assistant_content or "").strip()
         if not u and not a:
             return None
-        content = f"User: {u}\nAssistant: {a}"
         try:
-            self._client.remember(
-                agent_uuid=self._agent_uuid,
-                content=content,
-                timeout=self._recall_timeout,
-            )
+            if u:
+                self._client.chat_turn(
+                    agent_uuid=self._agent_uuid,
+                    role="user",
+                    text=u,
+                )
+            if a:
+                self._client.chat_turn(
+                    agent_uuid=self._agent_uuid,
+                    role="assistant",
+                    text=a,
+                )
         except Exception:  # noqa: BLE001 — non-blocking is required
             return None
         return None
