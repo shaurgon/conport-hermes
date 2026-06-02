@@ -67,7 +67,8 @@ class RecallHit(TypedDict, total=False):
     frozen_community_id: int | None
     created_by_agent_uuid: str
     created_at: str
-    similarity: float
+    similarity: float | None
+    score: float
 
 
 # ── Config ───────────────────────────────────────────────────────────

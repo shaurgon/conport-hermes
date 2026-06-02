@@ -1,6 +1,6 @@
 # conport-hermes
 
-ConPort memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — long-term knowledge graph for autonomous agents on top of ConPort's Agent Memory v2 tree (decisions 660–682).
+ConPort memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — a long-term knowledge graph for autonomous agents on top of ConPort's **Agent Memory v3 sphere graph** + **Workspace v1** (event-sourced records).
 
 ```bash
 hermes plugins install shaurgon/conport-hermes
@@ -11,24 +11,19 @@ A default ConPort agent is auto-created and bound to your Hermes profile in one 
 
 ## What you get
 
-- **Tree-shaped persistent memory** — trunk + identity / principles / person-knowledge sub-stores + branches per task / topic (doc-91)
-- **Auto-bootstrap** — `agent_init` fires at session start; trunk roots + counters populate the system prompt
-- **Auto-recall** injected before every turn — composite-scored (0.6·cosine + 0.2·recall_factor + 0.2·foundational_boost), non-blocking, 2-second budget
-- **31 agent_* tools** — write/read/reflect, tree navigation, branch lifecycle, artifacts, lift candidates, promotion conflicts, skill versioning + notes + activations
-- **Non-destructive gravity** — no `forget`; consolidation + supersession happen via tree edges and re-crystallization
-- **CLI** — `hermes conport-hermes status | agent | init | reflect | branches | tail`
+- **Sphere-graph memory** — every memory is a typed node (`identity` / `principle` / `fact` / `observation` / `skill` / `artifact`) connected to others by typed edges (`semantic` / `derived_from` / `temporal` / `skill_of` / `competing_view` / `supersedes`). No tree, no `parent_id`, no branches — topics emerge as dense edge clusters.
+- **Auto-bootstrap** — `agent_init` fires at session start; identity + principles + broadcast facts + mature-community hints + any pending extraction populate the system prompt.
+- **Auto-recall** injected before every turn — **multi-strategy** (vector + keyword/FTS + graph-adjacency, fused via Reciprocal Rank Fusion), non-blocking, 2-second budget.
+- **17 agent tools** — 6 memory (remember / recall / chat-turn / extract-thread / subgraph / promote-skill) + 11 workspace (entities / events / runs / projections / node-entity links).
+- **Visibility model** — `private` (the agent's own), `shared` (the owner's agents), `broadcast` (always loaded; crystallized skills + core user facts).
+- **Skill emergence** — the backend surfaces `mature_communities`; the agent decides when to crystallize one into a `skill` node via `agent_promote_skill`.
+- **CLI** — `hermes conport-hermes status | agent | recall | init`.
 
-> **v1.0.0 — Agent Memory v2 (breaking).** The flat v1 memory surface
-> (`conport_remember` / `conport_recall` / `conport_forget` /
-> `conport_reflect` / `conport_link_memories`) is gone. Backend data
-> already migrated on 2026-05-20 (task-319) — every memory lives in
-> the new tree shape, indexed under the user's existing
-> `person_knowledge_root` until gravity reshapes it. Client-side
-> migration: pull the new plugin version, restart Hermes; first
-> `agent_init` returns `bootstrap_state='continuing'` and you're set.
-> Code that called the v1 verbs needs to rewrite to `agent_remember` /
-> `agent_recall`. See [CHANGELOG](CHANGELOG.md) for the full
-> verb-by-verb diff.
+> **Conversation lands in memory automatically.** Call `agent_chat_turn`
+> for every turn; when the response carries `extraction_signal=true`
+> (buffer ≥ 10 un-extracted messages), call `agent_extract_thread` with the
+> returned `message_ids` to distill the buffer into typed nodes + edges.
+> See [CHANGELOG](CHANGELOG.md) for the v2-tree → v3-sphere migration.
 
 ## Prerequisites
 
@@ -74,7 +69,7 @@ Inside any Hermes session, the agent can now:
 
 ```
 > Remember that we standardized on UTF-8 BOM-less for all source files.
-[agent calls conport_remember]
+[agent calls agent_remember]
 
 > Have we made any decisions about character encoding?
 [prefetch surfaces it; agent answers from recall]
@@ -93,113 +88,82 @@ Non-secret config is stored at `$HERMES_HOME/conport_provider.json`. The API key
 
 ## Tool reference
 
-### Writes / reads (the everyday set)
+All tools are wrapped as REST calls under `https://api.conport.app/api/v1`
+(sphere memory under `/sphere/*`, workspace under `/workspace/*`).
+
+### Memory (the everyday set)
 
 | Tool | Purpose | Prompts that trigger it |
 |------|---------|-------------------------|
-| `agent_remember` | Persist a fact, decision, lesson. `parent_id` null → backend routes via argmax similarity (decision-673). | "Remember that…", "Save this decision…", "Note for future me…" |
-| `agent_recall` | Composite-scored search across the tree. `scope_root_id` narrows to one sub-store. | "What did we decide about…?", "Have we discussed X before?" |
-| `agent_reflect` | Manual gravity on a node: persist merged content + consolidation + crystallisation. Backend never synthesises (decision-692). | "Consolidate this branch", "Re-distil today's thread" |
+| `agent_remember` | Persist a typed node (`meta_type` + `content`), optionally with edges to existing nodes. | "Remember that…", "Save this decision…", "Note for future me…" |
+| `agent_recall` | Multi-strategy search (vector + keyword/FTS + graph adjacency, RRF-fused). `scope` filters by `meta_types` / `visibility` / `community_id` / `since`–`until`. | "What did we decide about…?", "Have we discussed X before?" |
+| `agent_chat_turn` | Buffer one conversation message. When the response returns `extraction_signal=true`, run `agent_extract_thread` next. | called for every turn |
+| `agent_extract_thread` | Distill a buffer of messages (`message_ids`) into typed nodes + edges. | fired by `extraction_signal` |
+| `agent_get_subgraph` | BFS outward from a node through typed edges, respecting visibility. | "What else is connected to this topic?" |
+| `agent_promote_skill` | Crystallize a mature community into a `skill` node (broadcast). | when `agent_init` surfaces a mature community worth promoting |
 
-### Tree navigation
+`agent_init` runs at session start (lifecycle, not a turn-level tool): it
+find-or-creates the agent and returns identity / principles / broadcast facts
+/ mature-community hints / pending extraction.
 
-| Tool | Purpose |
-|------|---------|
-| `agent_get_node` | One node + immediate children |
-| `agent_list_branches` | Branches filtered by `state` (active / dormant / closed) |
-| `agent_walk_branch` | Full branch arc + linked artifacts |
+### Workspace (event-sourced records)
 
-### Branch lifecycle
+Structured, append-only records that live **beside** memory (never mixed into
+the sphere graph): `agent_entity_upsert` / `agent_entity_get` /
+`agent_entity_list`, `agent_event_record` / `agent_event_query`,
+`agent_run_start` / `agent_run_finish`, `agent_projection_record` /
+`agent_projection_current` / `agent_projection_history`, and
+`agent_link_node_to_entity` (cross-link a memory node to a workspace entity).
+Use the workspace for facts that need exact queries, history, or run lineage
+— not for free-form recall.
 
-`agent_create_branch`, `agent_close_branch`, `agent_activate_node`, `agent_activate_branch` (decision-680).
+### Two channels to the agent layer
 
-### Artifacts
+A Hermes agent reaches ConPort's agent layer through exactly one of two
+surfaces — both agent-layer only, never the project surface:
 
-`agent_emit_artifact`, `agent_list_artifacts`, `agent_get_artifact`, `agent_artifact_provenance`, `agent_node_artifacts`. Artifacts don't participate in gravity (decision-664) — use them for branch outputs.
+1. **This plugin** — REST under `/api/v1/sphere/*` + `/api/v1/workspace/*`.
+   The default path; no MCP client needed.
+2. **MCP** — the same `agent_*` tools at `https://api.conport.app/mcp-agent`
+   via the [`conport-agent`](../conport-plugin/skills/conport-agent/SKILL.md)
+   skill. Use when your harness speaks MCP rather than REST.
 
-### Cross-pollination + promotion
+Both accept the same `cport_live_…` key (`Authorization: Bearer` or `X-API-Key`).
 
-`agent_review_lift_candidates`, `agent_confirm_lift`, `agent_request_synthesis_assistance` (decisions 670–672).
-`agent_review_promotion_conflicts`, `agent_resolve_promotion_conflict` (decisions 671 + 692).
-
-### Skills
-
-`agent_load_skill`, `agent_list_skills`, `agent_skill_versions`, `agent_get_skill_version`, `agent_get_skill_md`, `agent_skill_notes`, `agent_add_skill_note`, `agent_supersede_skill_note`, `agent_complete_re_crystallization`, `agent_review_re_crystallization`, `agent_skill_activations` (decisions 663 / 675 / task-356).
-
-### Removed in v1.0.0
-
-| Old verb | Replacement |
-|----------|-------------|
-| `conport_remember` | `agent_remember` (parent_id is optional — auto-routing) |
-| `conport_recall` | `agent_recall` (composite scoring, scope_root_id) |
-| `conport_forget` | **No replacement.** Gravity is non-destructive (decision-667); consolidation + supersession at re-crystallization is the path. |
-| `conport_reflect` | `agent_reflect(node_id, new_content)` — per-node, scoped |
-| `conport_link_memories` | **No replacement.** Tree edges (`parent_id`) + trunk promotion provenance replace explicit links. |
-
-### Project tools — removed in v0.6.0
-
-Earlier versions exposed a project-shaped surface (`conport_attach_project`,
-`conport_search`, `conport_add_task`, `conport_sync_decision`,
-`conport_log_progress`, document tools, block tools — 14 tools total).
-Removed in v0.6.0 per decision-660: harness agents work in continuous
-conversation streams with dozens of context switches per day, not
-project-shaped tasks. The "currently attached project" pattern is
-incompatible with that runtime.
-
-A Hermes agent reaches ConPort via exactly two channels — both
-agent-layer only, never the project surface:
-
-1. **This plugin** — the five `conport_*` tools above, REST under the
-   hood. Default path.
-2. **`/mcp-agent`** — the 29 `agent_*` tools at
-   `https://api.conport.app/mcp-agent` via the
-   [`conport-agent`](../conport-plugin/skills/conport-agent/SKILL.md) skill.
-   Use when you specifically want the richer v2 surface (branches,
-   skill versioning, lift candidates, …) instead of the v1 memory
-   API this plugin wraps.
-
-Both channels accept the same `cport_live_…` key (`Authorization: Bearer`
-or `X-API-Key`).
-
-**Do not point a Hermes agent at `/mcp`.** The project surface is for
-project-shaped IDE consumers (Claude Code, Cursor, Claude.ai chat);
-exposing it to a harness agent reintroduces exactly the cross-project
-recall hygiene problem v0.6.0 was meant to fix (decision-660).
+**Do not point a Hermes agent at `/mcp`.** That project surface is for
+project-shaped IDE consumers (Claude Code, Cursor, Claude.ai chat); exposing
+it to a harness agent reintroduces the cross-project recall-hygiene problem the
+agent layer was built to avoid (decision-660).
 
 ### Node shape
 
-Every node in the tree is one record with:
+Every memory is one `harness_node` record:
 
 - **`id`** — per-agent integer
+- **`meta_type`** — `identity` / `principle` / `fact` / `observation` / `skill` / `artifact`
 - **`content`** — free-form text (≤10 000 chars)
-- **`parent_id`** — anchors the node in the tree (null only for the
-  trunk root). Auto-routing on `agent_remember` picks the right
-  ancestor by embedding similarity (decision-673).
-- **`branch_id`** — the origin id this node belongs to (null for
-  trunk-resident nodes).
-- **`is_skill`** — `true` once gravity crystallises the node (decision-663).
-- **`tags`** — free-form list; used for filtering, not for routing.
+- **`visibility`** — `private` / `shared` / `broadcast` (identity + principle are always `private`)
+- **`created_by_agent_uuid`** — provenance
+- **`frozen_community_id`** — the Louvain community a node settled into (null until detection runs)
+- **`tags`** — free-form list; used for filtering
 
-Recall hits carry an additional **`composite_score`** (0..1) per
-decision-678: `0.6·cosine + 0.2·recall_factor + 0.2·foundational_boost`.
+Recall hits additionally carry **`similarity`** (vector cosine; null for
+keyword-only hits) and **`score`** (the fused RRF score the result was ranked
+by).
 
-### Tree edges
+### Edges
 
-Edges are structural (`parent_id`) and bookkeeping
-(`branch_id`, `lifted_to_trunk_node_id`, `lift_source_origin_ids`).
-There is no separate "link relation" type any more — supersession
-and cross-branch lift are expressed through these fields plus the
-re-crystallisation history on skills.
+Edges are typed `harness_edge` rows: `source_node_id`, `target_node_id`,
+`edge_type` (one of the six relationship kinds above) and `weight`. Supersession
+and cross-references are explicit edges — there is no structural `parent_id`.
 
 ## CLI reference
 
 ```bash
-hermes conport-hermes status                                 # identity + bootstrap state + counters
-hermes conport-hermes agent                                  # full agent record (JSON)
-hermes conport-hermes reflect --node-id N [--new-content STR]  # manual gravity on one node
-hermes conport-hermes branches [--state active|dormant|closed]
-hermes conport-hermes tail [--interval 2]                    # poll active branches
-hermes conport-hermes init                                   # (re)run the identity wizard
+hermes conport-hermes status                  # identity + bootstrap counters (identity / principles / broadcast / mature communities / pending extraction)
+hermes conport-hermes agent                   # full agent record (JSON)
+hermes conport-hermes recall "<query>" [--limit N]   # multi-strategy search over the sphere
+hermes conport-hermes init                    # (re)run the identity wizard
 ```
 
 ## Identity model
@@ -215,17 +179,17 @@ To **switch** profiles to a different agent, delete `$HERMES_HOME/conport.json` 
 | `401 Unauthorized` on first call | Bad or rotated API key | Open `$HERMES_HOME/.env`, replace `CONPORT_API_KEY`; or rotate via the ConPort dashboard |
 | `No identity at …/conport.json` | Wizard never ran | `hermes conport-hermes init` |
 | `404` on `/agents/<uuid>` | Agent was deleted server-side | `rm $HERMES_HOME/conport.json && hermes conport-hermes init` |
-| Recall returns nothing in fresh session | Brand-new agent — memory is empty | Use `agent_remember` a few times; gravity surfaces patterns later |
+| Recall returns nothing in fresh session | Brand-new agent — memory is empty | Use `agent_remember` a few times; recall surfaces them once embedded |
 | Recall is slow / times out | Network to ConPort exceeds 2s | Bump `recall_timeout_seconds` (but stays non-blocking by design) |
-| Tool calls never reach ConPort | Provider deactivated | `hermes memory status` — confirm `conport` is the active provider |
+| Tool calls never reach ConPort | Provider deactivated | `hermes memory status` — confirm `conport-hermes` is the active provider |
 
 ## FAQ
 
 **Q. How is this different from Hermes' built-in `MEMORY.md`?**
-ConPort gives you a tree-shaped knowledge graph with composite-scored recall, branches per topic, crystallised skills, and cross-pollination. `MEMORY.md` is a flat append-only file. They can coexist (different tools), but only one `MemoryProvider` is active at a time.
+ConPort gives you a sphere-graph knowledge base with multi-strategy recall, typed edges, emergent skill communities, and a separate event-sourced workspace. `MEMORY.md` is a flat append-only file. They can coexist (different tools), but only one `MemoryProvider` is active at a time.
 
-**Q. What happens when reflect runs?**
-`agent_reflect(node_id, new_content?)` operates on a single node. With `new_content` — backend persists the merged content, refreshes the embedding, runs the consolidation pass, and checks whether the node now meets the skill-crystallisation threshold (decision-663). Without — pure bookkeeping. Backend never synthesises; the agent provides the merged content (decision-692).
+**Q. How does memory get written during a conversation?**
+Call `agent_chat_turn` for every turn. When a response returns `extraction_signal=true` (the buffer reached ~10 un-extracted messages), call `agent_extract_thread` with the returned `message_ids` — the backend distills the buffer into typed nodes + edges. Explicit knowledge you want saved immediately goes through `agent_remember` directly.
 
 **Q. Can I use ConPort with another MemoryProvider at the same time?**
 No — Hermes activates exactly one `MemoryProvider`. You can switch via `hermes memory setup`. (The plain `MEMORY.md` file is a separate mechanism and is unaffected.)
@@ -234,28 +198,14 @@ No — Hermes activates exactly one `MemoryProvider`. You can switch via `hermes
 In `$HERMES_HOME/.env` (profile-scoped, never sent anywhere except `api.conport.app`). `conport_provider.json` only holds non-secret config. Rotate any time from the ConPort dashboard.
 
 **Q. Will the agent see my memories from other Hermes profiles?**
-No — each Hermes profile binds to one ConPort agent UUID, and ConPort's row-level security scopes memories to the agent. Different profile = different agent = different memory pool.
+No — each Hermes profile binds to one ConPort agent UUID, and ConPort's row-level security scopes memories to the agent/owner. Different profile = different agent = different memory pool.
 
 **Q. Does this work with ConPort self-hosted?**
 Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
-## Background consolidation
-
-v1.0.0 no longer has a `--scope` wide reflect — gravity runs per-node
-(`agent_reflect(node_id, new_content?)`) and the backend's APScheduler
-jobs handle the cross-cutting passes (cross-pollination scan, promotion
-threshold check, re-crystallisation hysteresis) on their own cadence.
-If you want a daily nudge to surface the lift queue / promotion
-conflicts to the user, a thin status cron works:
-
-```cron
-# crontab -e
-0 3 * * * /home/USER/.hermes/hermes-agent/venv/bin/hermes conport-hermes status > /tmp/conport-status.log 2>&1
-```
-
 ## Status
 
-**Alpha** (v0.1.4). E2E-validated against `hermes-agent v0.12.0` and production `api.conport.app` — all five tools, identity wizard, prefetch, error paths, and shutdown round-trip cleanly. See [VALIDATION.md](VALIDATION.md) for the full report.
+**Alpha.** E2E-validated against production `api.conport.app` — sphere memory (`/sphere/*`) and workspace (`/workspace/*`) endpoints, identity wizard, prefetch, and error paths round-trip cleanly.
 
 ## Source
 

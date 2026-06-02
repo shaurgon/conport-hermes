@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 PROVIDER_NAME = "conport"
 

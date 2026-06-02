@@ -6,6 +6,7 @@ Method names match MCP tool names for consistency.
 
 from __future__ import annotations
 
+import json
 from typing import Any, TypeVar, cast
 
 import httpx
@@ -59,7 +60,7 @@ class ConPortClient:
         return _as(AgentRecord, r.json())
 
     def agent_init(self, agent_uuid: str) -> AgentInitPayload:
-        r = self._client.get(f"/api/v1/agents/{agent_uuid}/graph")
+        r = self._client.post("/api/v1/sphere/init", json={"agent_uuid": agent_uuid})
         r.raise_for_status()
         return _as(AgentInitPayload, r.json())
 
@@ -75,19 +76,19 @@ class ConPortClient:
             body["visibility"] = visibility
         if edges:
             body["edges"] = edges
-        r = self._client.post("/api/v1/agents/remember", json=body,
+        r = self._client.post("/api/v1/sphere/remember", json=body,
                               timeout=timeout or self._client.timeout)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
     def chat_turn(self, agent_uuid: str, role: str, text: str) -> dict[str, Any]:
-        r = self._client.post("/api/v1/agents/chat-turn",
+        r = self._client.post("/api/v1/sphere/chat-turn",
                               json={"agent_uuid": agent_uuid, "role": role, "text": text})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
     def extract_thread(self, agent_uuid: str, message_ids: list[int]) -> dict[str, Any]:
-        r = self._client.post("/api/v1/agents/extract-thread",
+        r = self._client.post("/api/v1/sphere/extract-thread",
                               json={"agent_uuid": agent_uuid, "message_ids": message_ids})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
@@ -100,14 +101,14 @@ class ConPortClient:
     ) -> list[RecallHit]:
         params: dict[str, Any] = {"q": query, "limit": limit, "agent_uuid": agent_uuid}
         if scope:
-            params["scope"] = scope
-        r = self._client.get("/api/v1/agents/recall", params=params,
+            params["scope"] = json.dumps(scope)
+        r = self._client.get("/api/v1/sphere/recall", params=params,
                              timeout=timeout or self._client.timeout)
         r.raise_for_status()
         return cast(list[RecallHit], _list_under(r.json(), "nodes"))
 
     def get_subgraph(self, agent_uuid: str, root_node_id: int, *, depth: int = 2) -> dict[str, Any]:
-        r = self._client.get("/api/v1/agents/subgraph",
+        r = self._client.get("/api/v1/sphere/subgraph",
                              params={"agent_uuid": agent_uuid, "root_node_id": root_node_id, "depth": depth})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())

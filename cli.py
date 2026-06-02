@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import time
 from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
@@ -137,51 +136,29 @@ def conport_hermes_command(args: argparse.Namespace) -> None:
         if sub == "status":
             agent = client.get_agent(uuid)
             payload = client.agent_init(uuid)
+            pending = payload.get("pending_extraction") or {}
             print(f"agent_uuid       {uuid}")
             print(f"agent_name       {agent.get('name', '')}")
             print(f"bootstrap_state  {payload.get('bootstrap_state', '?')}")
-            print(f"trunk_root_id    {payload.get('trunk_root_id', '?')}")
-            print(f"active_branches  {len(payload.get('active_branches', []) or [])}")
-            print(f"lift_candidates  {payload.get('pending_lift_candidates', 0)}")
-            print(f"conflicts        {payload.get('pending_promotion_conflicts', 0)}")
+            print(f"identity         {len(payload.get('identity', []) or [])}")
+            print(f"principles       {len(payload.get('principles', []) or [])}")
+            print(f"broadcast_facts  {len(payload.get('broadcast_facts', []) or [])}")
+            print(f"mature_comms     {len(payload.get('mature_communities', []) or [])}")
+            print(f"pending_extract  {pending.get('buffer_size', 0)}")
         elif sub == "agent":
             print(json.dumps(client.get_agent(uuid), indent=2, ensure_ascii=False))
-        elif sub == "reflect":
+        elif sub == "recall":
             print(
                 json.dumps(
-                    client.reflect(uuid, node_id=args.node_id, new_content=args.new_content),
+                    client.recall(uuid, args.query, limit=args.limit),
                     indent=2,
                     ensure_ascii=False,
                 )
             )
-        elif sub == "branches":
-            print(
-                json.dumps(
-                    client.list_branches(uuid, state=args.state),
-                    indent=2,
-                    ensure_ascii=False,
-                )
-            )
-        elif sub == "tail":
-            # Poll the active-branches list. Cron-style watch — useful from an
-            # operator shell, not from inside the agent loop.
-            seen: set[int] = set()
-            try:
-                while True:
-                    for b in client.list_branches(uuid, state="active"):
-                        bid = b.get("branch_id")
-                        if not isinstance(bid, int) or bid in seen:
-                            continue
-                        seen.add(bid)
-                        preview = (b.get("origin_content_preview") or "")[:200]
-                        print(f"branch-{bid} ({b.get('branch_state', '?')}) {preview}")
-                    time.sleep(args.interval)
-            except KeyboardInterrupt:
-                pass
         else:
             raise SystemExit(
                 "Usage: hermes conport-hermes "
-                "{init|status|agent|reflect|branches|tail}"
+                "{init|status|agent|recall}"
             )
     finally:
         client.close()
@@ -201,19 +178,8 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     sub.add_parser("status", help="Identity + bootstrap state + counters")
     sub.add_parser("agent", help="Show full agent record")
 
-    refl = sub.add_parser("reflect", help="Manually invoke gravity on a node")
-    refl.add_argument("--node-id", dest="node_id", type=int, required=True)
-    refl.add_argument(
-        "--new-content",
-        dest="new_content",
-        default=None,
-        help="Merged content; omit for bookkeeping-only reflect.",
-    )
-
-    br = sub.add_parser("branches", help="List branches optionally by state")
-    br.add_argument("--state", choices=["active", "dormant", "closed"], default=None)
-
-    tail = sub.add_parser("tail", help="Stream new active branches (poll)")
-    tail.add_argument("--interval", type=float, default=2.0)
+    rec = sub.add_parser("recall", help="Multi-strategy search over the sphere graph")
+    rec.add_argument("query")
+    rec.add_argument("--limit", type=int, default=10)
 
     subparser.set_defaults(func=conport_hermes_command)

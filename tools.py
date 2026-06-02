@@ -70,10 +70,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "agent_recall",
         "description": (
-            "Semantic search across the sphere graph. Always call this "
-            "before answering any question about prior context — the sphere "
-            "stores more than the context window holds. "
-            "Use scope to narrow by meta_type list or community_id."
+            "Multi-strategy search (vector + keyword/FTS + graph adjacency, "
+            "fused via RRF) across the sphere graph. Always call this before "
+            "answering any question about prior context — the sphere stores "
+            "more than the context window holds. Use scope to narrow by "
+            "meta_type, visibility, community_id, or a since/until time range."
         ),
         "parameters": {
             "type": "object",
@@ -87,7 +88,19 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                             "type": "array",
                             "items": {"type": "string"},
                         },
+                        "visibility": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
                         "community_id": {"type": "integer"},
+                        "since": {
+                            "type": "string",
+                            "description": "ISO 8601 timestamp — created_at >= since",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "ISO 8601 timestamp — created_at <= until",
+                        },
                     },
                 },
             },
