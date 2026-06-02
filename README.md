@@ -113,9 +113,18 @@ the sphere graph): `agent_entity_upsert` / `agent_entity_get` /
 `agent_entity_list`, `agent_event_record` / `agent_event_query`,
 `agent_run_start` / `agent_run_finish`, `agent_projection_record` /
 `agent_projection_current` / `agent_projection_history`, and
-`agent_link_node_to_entity` (cross-link a memory node to a workspace entity).
-Use the workspace for facts that need exact queries, history, or run lineage
-— not for free-form recall.
+`agent_link_node_to_entity` (cross-link a memory node to a workspace entity),
+and `agent_entity_delete` (remove an entity + cascade its events / projections
+/ links — to fix a mistake without leaving junk). Use the workspace for facts
+that need exact queries, history, or run lineage — not for free-form recall.
+
+**Collections.** An `entity_type` IS a collection (`series`, `city`); its
+members are the entities of that type. Register the schema once with
+`agent_entity_upsert('_collection', '<type>', {description, field_hints, status_vocab})`;
+`agent_init` then returns `collections` (each type → member count + schema) so a
+session sees and continues accumulated collections. One canonical key per domain
+(`series`, not `serial`/`watchlist`); an item is one entity (a wishlist is the
+members filtered by a `status` attr, not a separate "list" entity).
 
 ### Two channels to the agent layer
 
