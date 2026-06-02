@@ -126,7 +126,13 @@ class ConPortClient:
         return cast(dict[str, Any], r.json())
 
     def entity_get(self, entity_type: str, name: str) -> dict[str, Any] | None:
-        r = self._client.get("/api/v1/workspace/entities", params={"entity_type": entity_type})
+        # Max page (server caps limit at 200): this resolves an exact
+        # (type, name); the server lists ORDER BY name, so the small default
+        # page could miss a late-sorting name.
+        r = self._client.get(
+            "/api/v1/workspace/entities",
+            params={"entity_type": entity_type, "limit": 200},
+        )
         if r.status_code == 404:
             return None
         r.raise_for_status()
@@ -137,6 +143,17 @@ class ConPortClient:
         r = self._client.get("/api/v1/workspace/entities", params={"entity_type": entity_type, "limit": limit})
         r.raise_for_status()
         return _list_under(r.json(), "entities")
+
+    def entity_delete(self, entity_type: str, name: str) -> dict[str, Any]:
+        """Delete an entity (and its events/projections) by (entity_type, name)."""
+        ent = self.entity_get(entity_type, name)
+        if not ent:
+            return {"deleted": False, "error": "not_found"}
+        r = self._client.delete(f"/api/v1/workspace/entities/{ent['id']}")
+        if r.status_code == 404:  # raced with another delete — already gone
+            return {"deleted": False, "error": "not_found"}
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
 
     # ── Workspace: event ─────────────────────────────────────────────
 

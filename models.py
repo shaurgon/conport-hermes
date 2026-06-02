@@ -44,6 +44,14 @@ class PendingExtraction(TypedDict, total=False):
     message_ids: list[int]
 
 
+class Collection(TypedDict, total=False):
+    key: str           # entity_type that IS the collection
+    members: int
+    description: str | None
+    field_hints: list[str] | None
+    status_vocab: list[str] | None
+
+
 class AgentInitPayload(TypedDict, total=False):
     agent_uuid: str
     owner_id: str
@@ -56,6 +64,7 @@ class AgentInitPayload(TypedDict, total=False):
     mature_communities: list[MatureCommunity]
     borderline_nodes: list[BorderlineNode]
     pending_extraction: PendingExtraction | None
+    collections: list[Collection]
     summary: str
 
 
