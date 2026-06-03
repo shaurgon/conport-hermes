@@ -1,7 +1,10 @@
-"""Synchronous REST client for ConPort Agent Memory (sphere graph) + Workspace.
+"""Synchronous REST client for the ConPort Agent Intent-API (v4) — doc-101.
 
-Wraps every endpoint a Hermes agent needs. Auth via Bearer cport_live_… token.
-Method names match MCP tool names for consistency.
+The agent works with **intent verbs** (create_kind / get_kind / remember /
+event / recall); ConPort owns storage. This client wraps the ``/sphere/*``
+intent endpoints plus a few aux operations the verbs don't cover (chat-turn,
+extract-thread, subgraph, entity delete, event timeline, runs). Auth via Bearer
+cport_live_… token.
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from typing import Any, TypeVar, cast
 
 import httpx
 
-from .models import AgentInitPayload, AgentRecord, RecallHit
+from .models import AgentInitPayload, AgentRecord, KindInfo, RecallHit
 
 _T = TypeVar("_T")
 
@@ -34,13 +37,13 @@ def _as(record_type: type[_T], payload: object) -> _T:
 
 
 class ConPortClient:
-    """REST client for v3 memory + workspace endpoints."""
+    """REST client for the v4 intent surface (``/sphere/*``) + aux."""
 
     def __init__(self, base_url: str, api_key: str, *, default_timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(
             base_url=self.base_url,
-            headers={"Authorization": f"Bearer {api_key}", "User-Agent": "conport-hermes/2.0.0"},
+            headers={"Authorization": f"Bearer {api_key}", "User-Agent": "conport-hermes/4.0.0"},
             timeout=default_timeout,
         )
 
@@ -64,22 +67,93 @@ class ConPortClient:
         r.raise_for_status()
         return _as(AgentInitPayload, r.json())
 
-    # ── Memory: write ────────────────────────────────────────────────
+    # ── Intent: structured domains (kinds) ───────────────────────────
+
+    def create_kind(
+        self, agent_uuid: str, name: str, fields: list[str], statuses: list[str] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"agent_uuid": agent_uuid, "name": name, "fields": fields}
+        if statuses:
+            body["statuses"] = statuses
+        r = self._client.post("/api/v1/sphere/create-kind", json=body)
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def get_kind(self, agent_uuid: str, name: str) -> KindInfo | None:
+        # agent_uuid is accepted for surface symmetry; the REST endpoint scopes
+        # by the authenticated owner, not the agent.
+        r = self._client.get("/api/v1/sphere/kind", params={"name": name})
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return _as(KindInfo, r.json())
+
+    # ── Intent: remember (free cognition OR structured item) ──────────
 
     def remember(
-        self, agent_uuid: str, content: str, *,
-        meta_type: str = "fact", visibility: str | None = None,
-        edges: list[dict[str, Any]] | None = None, timeout: float | None = None,
+        self, agent_uuid: str, content: str | None = None, *,
+        meta_type: str | None = None, visibility: str | None = None,
+        edges: list[dict[str, Any]] | None = None,
+        kind: str | None = None, name: str | None = None,
+        fields: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {"agent_uuid": agent_uuid, "meta_type": meta_type, "content": content}
-        if visibility:
-            body["visibility"] = visibility
-        if edges:
-            body["edges"] = edges
+        """Dual-mode. ``kind`` set → structured item (kind/name/fields); else →
+        free cognition node (content + optional meta_type/visibility/edges).
+        Routing happens server-side; this just forwards the right keys."""
+        body: dict[str, Any] = {"agent_uuid": agent_uuid}
+        if kind is not None:
+            body["kind"] = kind
+            if name is not None:
+                body["name"] = name
+            if fields is not None:
+                body["fields"] = fields
+        else:
+            body["content"] = content
+            if meta_type:
+                body["meta_type"] = meta_type
+            if visibility:
+                body["visibility"] = visibility
+            if edges:
+                body["edges"] = edges
         r = self._client.post("/api/v1/sphere/remember", json=body,
                               timeout=timeout or self._client.timeout)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
+
+    # ── Intent: event (change on a structured item) ───────────────────
+
+    def event(
+        self, agent_uuid: str, kind: str, name: str, note: str, *,
+        fields: dict[str, Any] | None = None, event_type: str = "note",
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "agent_uuid": agent_uuid, "kind": kind, "name": name, "note": note,
+            "event_type": event_type,
+        }
+        if fields:
+            body["fields"] = fields
+        r = self._client.post("/api/v1/sphere/event", json=body)
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    # ── Intent: recall (one ranked typed list) ────────────────────────
+
+    def recall(
+        self, agent_uuid: str, query: str, *, limit: int = 10,
+        scope: dict[str, Any] | None = None, timeout: float | None = None,
+    ) -> list[RecallHit]:
+        params: dict[str, Any] = {"q": query, "limit": limit, "agent_uuid": agent_uuid}
+        if scope:
+            params["scope"] = json.dumps(scope)
+        r = self._client.get("/api/v1/sphere/recall", params=params,
+                             timeout=timeout or self._client.timeout)
+        r.raise_for_status()
+        # v4 recall returns a typed list under "results" (node|item); "nodes" is
+        # a back-compat subset. Prefer results.
+        return cast(list[RecallHit], _list_under(r.json(), "results", "nodes"))
+
+    # ── Aux: conversation intake ──────────────────────────────────────
 
     def chat_turn(self, agent_uuid: str, role: str, text: str) -> dict[str, Any]:
         r = self._client.post("/api/v1/sphere/chat-turn",
@@ -93,19 +167,7 @@ class ConPortClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
-    # ── Memory: read ─────────────────────────────────────────────────
-
-    def recall(
-        self, agent_uuid: str, query: str, *, limit: int = 10,
-        scope: dict[str, Any] | None = None, timeout: float | None = None,
-    ) -> list[RecallHit]:
-        params: dict[str, Any] = {"q": query, "limit": limit, "agent_uuid": agent_uuid}
-        if scope:
-            params["scope"] = json.dumps(scope)
-        r = self._client.get("/api/v1/sphere/recall", params=params,
-                             timeout=timeout or self._client.timeout)
-        r.raise_for_status()
-        return cast(list[RecallHit], _list_under(r.json(), "nodes"))
+    # ── Aux: explore + timeline + cleanup ─────────────────────────────
 
     def get_subgraph(self, agent_uuid: str, root_node_id: int, *, depth: int = 2) -> dict[str, Any]:
         r = self._client.get("/api/v1/sphere/subgraph",
@@ -113,25 +175,15 @@ class ConPortClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
-    # ── Workspace: entity ────────────────────────────────────────────
+    def _entity_get(self, kind: str, name: str) -> dict[str, Any] | None:
+        """Resolve a structured item to its row (internal — for entity_delete).
 
-    def entity_upsert(
-        self, agent_uuid: str, entity_type: str, name: str, attrs: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {"agent_uuid": agent_uuid, "entity_type": entity_type, "name": name}
-        if attrs:
-            body["attrs"] = attrs
-        r = self._client.post("/api/v1/workspace/entities", json=body)
-        r.raise_for_status()
-        return cast(dict[str, Any], r.json())
-
-    def entity_get(self, entity_type: str, name: str) -> dict[str, Any] | None:
-        # Max page (server caps limit at 200): this resolves an exact
-        # (type, name); the server lists ORDER BY name, so the small default
-        # page could miss a late-sorting name.
+        Max page (server caps limit at 200): this resolves an exact (kind, name);
+        the server lists ORDER BY name, so a small default page could miss a
+        late-sorting name."""
         r = self._client.get(
             "/api/v1/workspace/entities",
-            params={"entity_type": entity_type, "limit": 200},
+            params={"entity_type": kind, "limit": 200},
         )
         if r.status_code == 404:
             return None
@@ -139,14 +191,9 @@ class ConPortClient:
         entities = _list_under(r.json(), "entities")
         return next((e for e in entities if e.get("name") == name), None)
 
-    def entity_list(self, entity_type: str, *, limit: int = 50) -> list[dict[str, Any]]:
-        r = self._client.get("/api/v1/workspace/entities", params={"entity_type": entity_type, "limit": limit})
-        r.raise_for_status()
-        return _list_under(r.json(), "entities")
-
-    def entity_delete(self, entity_type: str, name: str) -> dict[str, Any]:
-        """Delete an entity (and its events/projections) by (entity_type, name)."""
-        ent = self.entity_get(entity_type, name)
+    def entity_delete(self, kind: str, name: str) -> dict[str, Any]:
+        """Delete a structured item (+ its events) by (kind, name) — fix a mistake."""
+        ent = self._entity_get(kind, name)
         if not ent:
             return {"deleted": False, "error": "not_found"}
         r = self._client.delete(f"/api/v1/workspace/entities/{ent['id']}")
@@ -155,25 +202,10 @@ class ConPortClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
-    # ── Workspace: event ─────────────────────────────────────────────
-
-    def event_record(
-        self, agent_uuid: str, event_type: str, payload: dict[str, Any], *,
-        entity_id: int | None = None, occurred_at: str | None = None, run_id: int | None = None,
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {"agent_uuid": agent_uuid, "event_type": event_type, "payload": payload}
-        if entity_id is not None:
-            body["entity_id"] = entity_id
-        if occurred_at:
-            body["occurred_at"] = occurred_at
-        if run_id is not None:
-            body["run_id"] = run_id
-        r = self._client.post("/api/v1/workspace/events", json=body)
-        r.raise_for_status()
-        return cast(dict[str, Any], r.json())
-
     def event_query(self, *, entity_id: int | None = None, event_type: str | None = None,
                     run_id: int | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Read an item's timeline (events aren't in recall). Pass the item_id
+        from a recall result as ``entity_id``."""
         params: dict[str, Any] = {"limit": limit}
         if entity_id is not None:
             params["entity_id"] = entity_id
@@ -185,7 +217,7 @@ class ConPortClient:
         r.raise_for_status()
         return _list_under(r.json(), "events")
 
-    # ── Workspace: run ───────────────────────────────────────────────
+    # ── Aux: run (skill-execution tracking) ───────────────────────────
 
     def run_start(self, agent_uuid: str, skill_name: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {"agent_uuid": agent_uuid, "skill_name": skill_name}
@@ -200,47 +232,5 @@ class ConPortClient:
         if outputs:
             body["outputs"] = outputs
         r = self._client.patch(f"/api/v1/workspace/runs/{run_id}", json=body)
-        r.raise_for_status()
-        return cast(dict[str, Any], r.json())
-
-    # ── Workspace: projection ────────────────────────────────────────
-
-    def projection_record(
-        self, agent_uuid: str, entity_id: int, projection_type: str, value: dict[str, Any], *,
-        derived_from_event_ids: list[int] | None = None, derived_from_run_id: int | None = None,
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "agent_uuid": agent_uuid, "entity_id": entity_id,
-            "projection_type": projection_type, "value": value,
-        }
-        if derived_from_event_ids:
-            body["derived_from_event_ids"] = derived_from_event_ids
-        if derived_from_run_id is not None:
-            body["derived_from_run_id"] = derived_from_run_id
-        r = self._client.post("/api/v1/workspace/projections", json=body)
-        r.raise_for_status()
-        return cast(dict[str, Any], r.json())
-
-    def projection_current(self, entity_id: int, projection_type: str) -> dict[str, Any] | None:
-        r = self._client.get("/api/v1/workspace/projections/current",
-                             params={"entity_id": entity_id, "projection_type": projection_type})
-        if r.status_code == 404:
-            return None
-        r.raise_for_status()
-        return cast(dict[str, Any], r.json())
-
-    def projection_history(self, entity_id: int, projection_type: str, *, limit: int = 100) -> list[dict[str, Any]]:
-        r = self._client.get("/api/v1/workspace/projections/history",
-                             params={"entity_id": entity_id, "projection_type": projection_type, "limit": limit})
-        r.raise_for_status()
-        return _list_under(r.json(), "projections")
-
-    # ── Cross-link ───────────────────────────────────────────────────
-
-    def link_node_to_entity(self, agent_uuid: str, node_id: int, entity_id: int,
-                            link_type: str = "mentions") -> dict[str, Any]:
-        r = self._client.post("/api/v1/workspace/node-entity-links",
-                              json={"agent_uuid": agent_uuid, "node_id": node_id,
-                                    "entity_id": entity_id, "link_type": link_type})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())

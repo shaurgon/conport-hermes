@@ -1,7 +1,8 @@
-"""TypedDict shapes for ConPort REST/MCP responses and on-disk config.
+"""TypedDict shapes for ConPort REST responses and on-disk config.
 
-v2.0.0: rewritten for Agent Memory v3 (sphere graph) + Workspace v1
-(event-sourced records). All v2 tree-based types removed.
+v4.0.0: Agent Intent-API — the agent works with intent verbs over hidden
+storage. ``RecallHit`` is a typed union (node | item); ``KindInfo`` is the
+form returned by ``get_kind``.
 """
 
 from __future__ import annotations
@@ -69,15 +70,36 @@ class AgentInitPayload(TypedDict, total=False):
 
 
 class RecallHit(TypedDict, total=False):
+    """One recall result — a typed union of a cognition node OR a structured item.
+
+    ``type`` discriminates: 'node' carries node_id/content/meta_type/visibility;
+    'item' carries item_id/kind/name/fields (the item's current-state synthesis).
+    """
+    type: str  # 'node' | 'item'
+    score: float
+    created_by_agent_uuid: str
+    created_at: str
+    # node-shaped
     node_id: int
     content: str
     meta_type: str
     visibility: str
     frozen_community_id: int | None
-    created_by_agent_uuid: str
-    created_at: str
     similarity: float | None
-    score: float
+    # item-shaped
+    item_id: int
+    kind: str
+    name: str
+    fields: dict[str, Any]
+
+
+class KindInfo(TypedDict, total=False):
+    """The form of a structured domain, returned by ``get_kind``."""
+    kind: str
+    fields: list[str]
+    statuses: list[str]
+    description: str | None
+    count: int
 
 
 # ── Config ───────────────────────────────────────────────────────────

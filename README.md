@@ -1,6 +1,6 @@
 # conport-hermes
 
-ConPort memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — a long-term knowledge graph for autonomous agents on top of ConPort's **Agent Memory v3 sphere graph** + **Workspace v1** (event-sourced records).
+ConPort memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — a long-term knowledge graph for autonomous agents on ConPort's **Agent Intent-API (v4)**. The agent works with **intent verbs** (create_kind / get_kind / remember / event / recall); ConPort decides where data lives, how it connects, and how to retrieve it.
 
 ```bash
 hermes plugins install shaurgon/conport-hermes
@@ -11,19 +11,20 @@ A default ConPort agent is auto-created and bound to your Hermes profile in one 
 
 ## What you get
 
-- **Sphere-graph memory** — every memory is a typed node (`identity` / `principle` / `fact` / `observation` / `skill` / `artifact`) connected to others by typed edges (`semantic` / `derived_from` / `temporal` / `skill_of` / `competing_view` / `supersedes`). No tree, no `parent_id`, no branches — topics emerge as dense edge clusters.
-- **Auto-bootstrap** — `agent_init` fires at session start; identity + principles + broadcast facts + mature-community hints + any pending extraction populate the system prompt.
-- **Auto-recall** injected before every turn — **multi-strategy** (vector + keyword/FTS + graph-adjacency, fused via Reciprocal Rank Fusion), non-blocking, 2-second budget.
-- **17 agent tools** — 6 memory (remember / recall / chat-turn / extract-thread / subgraph / promote-skill) + 11 workspace (entities / events / runs / projections / node-entity links).
+- **Five intent verbs** — `remember` (free thought OR a structured item), `recall` (find anything — cognition + items, one ranked typed list), `create_kind` / `get_kind` (declare and read a structured domain), `event` (log a change on an item). You never pick storage primitives or declare links — ConPort connects by meaning.
+- **Structured domains (kinds)** — declare a domain once (`series`, `city`, a research topic) with fields + a status vocabulary; items are the domain's current state, their history is `event`s, a synthesis lives in the item's fields. The schema grows organically — unknown fields are accepted.
+- **Auto-bootstrap** — `agent_init` fires at session start; identity + principles + broadcast facts + declared `collections` + mature-community hints + any pending extraction populate the system prompt.
+- **Auto-recall** injected before every turn — **multi-strategy** (vector + keyword/FTS + graph-adjacency, fused via Reciprocal Rank Fusion), spanning cognition AND structured items, non-blocking, 2-second budget.
+- **13 agent tools** — 5 intent verbs + 8 aux (chat-turn / extract-thread / subgraph / entity-delete / event-query / promote-skill / run-start / run-finish).
 - **Visibility model** — `private` (the agent's own), `shared` (the owner's agents), `broadcast` (always loaded; crystallized skills + core user facts).
-- **Skill emergence** — the backend surfaces `mature_communities`; the agent decides when to crystallize one into a `skill` node via `agent_promote_skill`.
+- **Skill emergence** — the backend surfaces `mature_communities`; the agent decides when to crystallize one into a `skill` via `agent_promote_skill`.
 - **CLI** — `hermes conport-hermes status | agent | recall | init`.
 
 > **Conversation lands in memory automatically.** Call `agent_chat_turn`
 > for every turn; when the response carries `extraction_signal=true`
 > (buffer ≥ 10 un-extracted messages), call `agent_extract_thread` with the
-> returned `message_ids` to distill the buffer into typed nodes + edges.
-> See [CHANGELOG](CHANGELOG.md) for the v2-tree → v3-sphere migration.
+> returned `message_ids` to distill the buffer into typed memories.
+> See [CHANGELOG](CHANGELOG.md) for the v3-storage → v4-intent migration.
 
 ## Prerequisites
 
@@ -89,42 +90,41 @@ Non-secret config is stored at `$HERMES_HOME/conport_provider.json`. The API key
 ## Tool reference
 
 All tools are wrapped as REST calls under `https://api.conport.app/api/v1`
-(sphere memory under `/sphere/*`, workspace under `/workspace/*`).
+(intent verbs under `/sphere/*`).
 
-### Memory (the everyday set)
+### The five intent verbs (the everyday set)
 
 | Tool | Purpose | Prompts that trigger it |
 |------|---------|-------------------------|
-| `agent_remember` | Persist a typed node (`meta_type` + `content`), optionally with edges to existing nodes. | "Remember that…", "Save this decision…", "Note for future me…" |
-| `agent_recall` | Multi-strategy search (vector + keyword/FTS + graph adjacency, RRF-fused). `scope` filters by `meta_types` / `visibility` / `community_id` / `since`–`until`. | "What did we decide about…?", "Have we discussed X before?" |
-| `agent_chat_turn` | Buffer one conversation message. When the response returns `extraction_signal=true`, run `agent_extract_thread` next. | called for every turn |
-| `agent_extract_thread` | Distill a buffer of messages (`message_ids`) into typed nodes + edges. | fired by `extraction_signal` |
-| `agent_get_subgraph` | BFS outward from a node through typed edges, respecting visibility. | "What else is connected to this topic?" |
-| `agent_promote_skill` | Crystallize a mature community into a `skill` node (broadcast). | when `agent_init` surfaces a mature community worth promoting |
+| `agent_remember` | Keep something. **Free cognition:** `content` + `meta_type` (a thought / fact / observation). **Structured item:** `kind` + `name` + `fields` (the current state of an item in a declared domain). | "Remember that…", "Save this decision…", "Rate this series…" |
+| `agent_recall` | Find anything — cognition AND structured items, one ranked typed list (each result has a `type`: `node` or `item`). `scope` filters by `meta_types` / `visibility` / `kind` / `since`–`until`. | "What did we decide about…?", "Which series did I drop?" |
+| `agent_create_kind` | Declare a structured domain once (`name`, `fields`, `statuses`) — like creating a table. | "Start tracking cities I'm scoring…" |
+| `agent_get_kind` | Read a domain's form (fields + statuses + member count) before writing items. | before `remember(kind=…)` |
+| `agent_event` | Log a change / what-happened on an existing item — its append-only timeline (`note` + optional structured `fields`). | "Note that the finale changed my mind on…" |
+
+You never say "node", "entity", "projection", or "link" — connecting things is
+ConPort's job (it links by meaning). `remember(kind=…)` into an **undeclared**
+kind fails with `unknown_kind` — `create_kind` first. An item is ONE record (a
+wishlist is its members filtered by `status`, not a separate item); a
+synthesis/verdict lives in the item's `fields`, its history in `event`s.
 
 `agent_init` runs at session start (lifecycle, not a turn-level tool): it
-find-or-creates the agent and returns identity / principles / broadcast facts
-/ mature-community hints / pending extraction.
+find-or-creates the agent and returns identity / principles / broadcast facts /
+declared `collections` / mature-community hints / pending extraction.
 
-### Workspace (event-sourced records)
+### Aux verbs
 
-Structured, append-only records that live **beside** memory (never mixed into
-the sphere graph): `agent_entity_upsert` / `agent_entity_get` /
-`agent_entity_list`, `agent_event_record` / `agent_event_query`,
-`agent_run_start` / `agent_run_finish`, `agent_projection_record` /
-`agent_projection_current` / `agent_projection_history`, and
-`agent_link_node_to_entity` (cross-link a memory node to a workspace entity),
-and `agent_entity_delete` (remove an entity + cascade its events / projections
-/ links — to fix a mistake without leaving junk). Use the workspace for facts
-that need exact queries, history, or run lineage — not for free-form recall.
+Beyond the five, a few operations for needs the verbs don't cover:
 
-**Collections.** An `entity_type` IS a collection (`series`, `city`); its
-members are the entities of that type. Register the schema once with
-`agent_entity_upsert('_collection', '<type>', {description, field_hints, status_vocab})`;
-`agent_init` then returns `collections` (each type → member count + schema) so a
-session sees and continues accumulated collections. One canonical key per domain
-(`series`, not `serial`/`watchlist`); an item is one entity (a wishlist is the
-members filtered by a `status` attr, not a separate "list" entity).
+| Tool | Purpose |
+|------|---------|
+| `agent_chat_turn` | Buffer one conversation message. When the response returns `extraction_signal=true`, run `agent_extract_thread` next. |
+| `agent_extract_thread` | Distill a buffer of messages (`message_ids`) into typed memories. |
+| `agent_get_subgraph` | Explore the neighbourhood of a cognition node (pass the `node_id` from a `recall` result of type `node`). |
+| `agent_entity_delete` | Delete a structured item (+ its events) by `(kind, name)` — fix a mistake without leaving a duplicate. |
+| `agent_event_query` | Read an item's timeline (events aren't in `recall`). Pass the `item_id` from a `recall` result as `entity_id`. |
+| `agent_promote_skill` | Crystallize a mature community into a broadcast `skill`. |
+| `agent_run_start` / `agent_run_finish` | Wrap a multi-step skill execution for a traceable run record. |
 
 ### Two channels to the agent layer
 
@@ -144,27 +144,20 @@ project-shaped IDE consumers (Claude Code, Cursor, Claude.ai chat); exposing
 it to a harness agent reintroduces the cross-project recall-hygiene problem the
 agent layer was built to avoid (decision-660).
 
-### Node shape
+### Recall result shape
 
-Every memory is one `harness_node` record:
+`recall` returns one ranked list; each hit carries a `type`:
 
-- **`id`** — per-agent integer
-- **`meta_type`** — `identity` / `principle` / `fact` / `observation` / `skill` / `artifact`
-- **`content`** — free-form text (≤10 000 chars)
-- **`visibility`** — `private` / `shared` / `broadcast` (identity + principle are always `private`)
-- **`created_by_agent_uuid`** — provenance
-- **`frozen_community_id`** — the Louvain community a node settled into (null until detection runs)
-- **`tags`** — free-form list; used for filtering
+- **`node`** (free cognition) — `node_id`, `content`, `meta_type` (`identity` /
+  `principle` / `fact` / `observation` / `skill` / `artifact`), `visibility`,
+  `similarity` (vector cosine; null for keyword-only hits), `score` (the fused
+  RRF rank).
+- **`item`** (a structured item) — `item_id`, `kind`, `name`, `fields` (the
+  item's current-state synthesis), `score`.
 
-Recall hits additionally carry **`similarity`** (vector cosine; null for
-keyword-only hits) and **`score`** (the fused RRF score the result was ranked
-by).
-
-### Edges
-
-Edges are typed `harness_edge` rows: `source_node_id`, `target_node_id`,
-`edge_type` (one of the six relationship kinds above) and `weight`. Supersession
-and cross-references are explicit edges — there is no structural `parent_id`.
+`event`s are **not** in recall — they're an item's timeline (read via
+`agent_event_query`). Connections between memories are built and traversed by
+ConPort internally (entity graph + embeddings); the agent never declares links.
 
 ## CLI reference
 
@@ -195,10 +188,10 @@ To **switch** profiles to a different agent, delete `$HERMES_HOME/conport.json` 
 ## FAQ
 
 **Q. How is this different from Hermes' built-in `MEMORY.md`?**
-ConPort gives you a sphere-graph knowledge base with multi-strategy recall, typed edges, emergent skill communities, and a separate event-sourced workspace. `MEMORY.md` is a flat append-only file. They can coexist (different tools), but only one `MemoryProvider` is active at a time.
+ConPort gives you an intent-driven knowledge base — free cognition AND structured domains (kinds), multi-strategy recall spanning both, emergent skill communities. `MEMORY.md` is a flat append-only file. They can coexist (different tools), but only one `MemoryProvider` is active at a time.
 
 **Q. How does memory get written during a conversation?**
-Call `agent_chat_turn` for every turn. When a response returns `extraction_signal=true` (the buffer reached ~10 un-extracted messages), call `agent_extract_thread` with the returned `message_ids` — the backend distills the buffer into typed nodes + edges. Explicit knowledge you want saved immediately goes through `agent_remember` directly.
+Call `agent_chat_turn` for every turn. When a response returns `extraction_signal=true` (the buffer reached ~10 un-extracted messages), call `agent_extract_thread` with the returned `message_ids` — the backend distills the buffer into typed memories. Explicit knowledge you want saved immediately goes through `agent_remember` directly.
 
 **Q. Can I use ConPort with another MemoryProvider at the same time?**
 No — Hermes activates exactly one `MemoryProvider`. You can switch via `hermes memory setup`. (The plain `MEMORY.md` file is a separate mechanism and is unaffected.)
@@ -214,7 +207,7 @@ Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
 ## Status
 
-**Alpha.** E2E-validated against production `api.conport.app` — sphere memory (`/sphere/*`) and workspace (`/workspace/*`) endpoints, identity wizard, prefetch, and error paths round-trip cleanly.
+**Alpha.** E2E-validated against production `api.conport.app` — the intent verbs (`/sphere/*`), identity wizard, prefetch, and error paths round-trip cleanly.
 
 ## Source
 

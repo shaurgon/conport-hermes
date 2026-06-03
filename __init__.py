@@ -15,172 +15,110 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "3.2.0"
+__version__ = "4.0.0"
 
 PROVIDER_NAME = "conport"
 
 
 _SYSTEM_PROMPT_BLOCK = """\
-## ConPort — Agent Memory v3 (Sphere Graph) + Workspace
+## ConPort — Agent Intent-API (v4)
 
-Your persistent memory is a **sphere graph** — a flat, typed node graph
-with typed edges. No tree, no parent_id, no branches. Identity and
-principles are node types, not structural roots. Topic clusters emerge via
-edge density and Louvain community detection; skills crystallize from dense
-stable communities.
+ConPort is your **single memory + knowledge system**. You work with
+**intent verbs** — say what you want kept or found; ConPort decides where it
+lives, how it connects, and how to retrieve it. You never pick storage
+primitives, you never say "node"/"entity"/"link" — connecting things is
+ConPort's job.
 
-> Project tools (decisions, tasks, documents) are NOT here — the agent
-> layer is structurally separate from project memory. For project work
-> use the `conport` skill or REST directly.
+> Project tools (decisions, tasks, documents) are NOT here — the agent layer
+> is structurally separate from project memory. For project work use the
+> `conport` skill or REST directly.
 
 ---
 
-### Core model
+### The five verbs
 
-**Node meta_types** (6):
-
-| meta_type | What it stores | Default visibility |
-|---|---|---|
-| `identity` | Self-statements about the agent | `private` (forced) |
-| `principle` | Declarative rules, safety rails | `private` (forced) |
-| `fact` | Atomic world/person knowledge | `shared` |
-| `observation` | Empirical events, things that happened | `shared` |
-| `skill` | Crystallized reusable patterns | `broadcast` |
-| `artifact` | Produced outputs (lists, drafts, tables) | `shared` |
-
-**Edge types** (6):
-
-| edge_type | Meaning |
+| Verb | What it does |
 |---|---|
-| `semantic` | Conceptual similarity |
-| `derived_from` | Provenance (artifact ← observations) |
-| `temporal` | A happened before B |
-| `skill_of` | Skill ← source observations/facts |
-| `competing_view` | Two nodes disagree or offer alternatives |
-| `supersedes` | New node replaces old |
+| `agent_remember(content)` | Keep a free thought / fact / observation. |
+| `agent_remember(kind, name, fields)` | Keep the current state of a structured item. |
+| `agent_recall(query, scope?)` | Find anything relevant — free knowledge AND structured items, one ranked list. |
+| `agent_create_kind(name, fields, statuses)` | Declare a structured domain, once (like a table). |
+| `agent_get_kind(name)` | Read a domain's form before writing items. |
+| `agent_event(kind, name, note, fields?)` | Log a change/what-happened on an item (its timeline). |
 
 ---
 
-### Visibility model
+### The structure decision (your only real choice)
 
-| Visibility | Who sees it | When to use |
-|---|---|---|
-| `private` | Only this agent | Identity, principles, scratch. Forced for identity/principle. |
-| `shared` | All agents of the same owner | Facts, observations, artifacts (default). |
-| `broadcast` | All agents, always pre-loaded | Crystallized skills. The collective layer. |
+**Free thought / observation / principle → `agent_remember(content)`.** It
+carries a visibility: `private` (only you; forced for identity/principle),
+`shared` (your owner's agents — default), `broadcast` (everyone, always
+loaded — crystallized skills, core user facts).
 
----
+**A thing you'll filter / compare / update over time, and there'll be more
+like it** (cities you score, series you rate, research topics) → a **kind**:
 
-### Memory vs Workspace — choose the right store
+1. New domain? `agent_create_kind("series", fields=[title, rating, verdict], statuses=[watching, watched, dropped])` — once.
+2. Before writing items, `agent_get_kind("series")` — use the real fields + a valid status, don't invent them.
+3. Write the item's current state:
+   `agent_remember(kind="series", name="Severance", fields={rating: 2, status: "dropped"})`
+4. Something happened over time → `agent_event(kind="series", name="Severance", note="rewatched the finale, still a 2")`.
 
-| What | Where |
-|---|---|
-| "User prefers city X" | memory (`fact` node) |
-| "User asked about moving" | memory (`observation`) |
-| City as entity with scores | workspace (`agent_entity_upsert`) |
-| News about that city | workspace (`agent_event_record`) |
-| Daily refresh skill run | workspace (`agent_run_start` / `agent_run_finish`) |
-| Current city score | workspace (`agent_projection_record` / `agent_projection_current`) |
-| "observation mentioned a city" | cross-link (`agent_link_node_to_entity`) |
+Rules that keep domains clean (skip them and you fragment):
 
-Rule: **structured fields + history ordered in time → workspace**.
-Free text + embedding for recall → memory.
+- **One canonical kind per domain** (`series`, not `serial`/`shows`). Check
+  `agent_init.collections` / `agent_get_kind` first; reuse, don't reinvent.
+  `agent_remember(kind=…)` into an **undeclared** kind fails with
+  `unknown_kind` — `agent_create_kind` first.
+- **An item is one record.** A list/wishlist is NOT an item — it's the members
+  filtered by a `status` field (`agent_recall(..., scope={kind:"series"})`).
+- **A synthesis/verdict lives in the item's fields** (current state), not a
+  separate object. History of how it changed → `agent_event`.
+- **Mistake?** `agent_entity_delete(kind, name)` — fix it, don't leave a dupe.
 
----
-
-### Writing memory
-
-**Path 1 — conversational harness (Hermes):**
-
-1. `agent_chat_turn(role, text)` — record each message as it happens.
-2. When the response includes `extraction_signal: true` (buffer >= 10
-   un-extracted messages), call `agent_extract_thread(message_ids)`
-   IMMEDIATELY before your next `agent_remember`.
-3. Extraction distills the conversation into typed nodes + edges.
-
-**Do NOT skip extraction when the signal fires.**
-
-**Path 2 — direct node write (explicit knowledge):**
-
-```
-agent_remember(
-    meta_type='fact',
-    content='...',
-    visibility='shared',          # optional
-    edges=[                       # optional — connect immediately
-        {"target_node_id": 42, "edge_type": "semantic"},
-        {"target_node_id": 17, "edge_type": "derived_from"}
-    ]
-)
-```
-
-Write freely — small atomic nodes are better than mega-nodes.
-Edge density is what creates topic structure.
+`status` is validated against the kind's `statuses`; unknown fields are
+accepted (the schema grows). `recall` finds items by content; `event`s are an
+item's timeline (read with `agent_event_query`, not `recall`).
 
 ---
 
-### Reading memory
+### Conversation intake (Hermes harness)
 
-- `agent_recall(query, limit, scope)` — semantic search respecting
-  visibility. Always call this FIRST before answering any question
-  about prior context.
-- `agent_get_subgraph(root_node_id, depth, edge_types)` — BFS outward
-  from a node. Use after recall to explore a topic neighbourhood.
+`agent_chat_turn(role, text)` records each message. When the response returns
+`extraction_signal: true` (buffer ≥ 10 un-extracted messages), call
+`agent_extract_thread(message_ids)` IMMEDIATELY before your next
+`agent_remember`. **Do NOT skip extraction when the signal fires.**
 
 ---
 
 ### Skill emergence
 
-Skills emerge from stable, dense communities detected by Louvain:
-
-1. Backend surfaces mature communities in `agent_init` response as
-   `mature_communities`.
-2. Review the `central_nodes` in each community.
-3. If the pattern deserves a skill, synthesize the content yourself,
-   then call `agent_promote_skill(community_id, content)`.
-
-**No auto-promotion.** Backend surfaces hints; you decide and write.
-
----
-
-### Workspace
-
-**Entity** — typed domain object with JSONB attrs:
-- `agent_entity_upsert` / `agent_entity_get` / `agent_entity_list`
-
-**Event** — append-only, immutable:
-- `agent_event_record` / `agent_event_query`
-
-**Run** — skill execution trace with params + outputs:
-- `agent_run_start` / `agent_run_finish`
-
-**Projection** — derived snapshot with provenance:
-- `agent_projection_record` / `agent_projection_current` / `agent_projection_history`
-
-**Cross-link** — connect memory node to workspace entity:
-- `agent_link_node_to_entity`
+`agent_init` surfaces `mature_communities` (dense, stable clusters). Review the
+`central_nodes`, synthesize the pattern yourself, then
+`agent_promote_skill(community_id, content)`. No auto-promotion — you decide
+and write; skills are broadcast.
 
 ---
 
 ### NEVER store
 
-Secrets, passwords, API keys, tokens — even partially. Reference where
-the value lives (`$API_KEY` env var) instead.
+Secrets, passwords, API keys, tokens — even partially. Reference where the
+value lives (`$API_KEY` env var) instead.
 
 ---
 
 ### Checklist
 
-- `agent_init` done?
-- `bootstrap_state` checked? (new → write identity + principles first)
+- `agent_init` done? `bootstrap_state` checked? (new → write identity + principles first)
+- `pending_extraction` present → `agent_extract_thread` first?
+- Glanced at `collections` — reusing existing domains, not reinventing?
 - Task arrived? First move = `agent_recall`, not `agent_remember`.
-- `extraction_signal` fired → `agent_extract_thread` called IMMEDIATELY?
-- `mature_communities` present → reviewed, decided promote or skip?
-- `private` vs `shared` vs `broadcast` — chosen correctly?
-- No secrets in memory or workspace content?
-- Structured domain data → workspace (entity + event + projection), not memory?
-- Workflow execution → `agent_run_start` / `agent_run_finish` wrapping it?
-- Derived result → `agent_projection_record` with `derived_from_event_ids`?
+- Structured domain → `agent_create_kind` once + `agent_get_kind` before writing items?
+- Item state → `agent_remember(kind,…)`; what-happened → `agent_event`; never list-as-item?
+- Free thought → `agent_remember(content)` with the right visibility?
+- `extraction_signal` fired → `agent_extract_thread` IMMEDIATELY?
+- `mature_communities` → reviewed, promote or skip?
+- No secrets stored?
 """
 
 
@@ -529,16 +467,24 @@ class ConPortMemoryProvider:
             return None
         lines: list[str] = []
         for h in hits:
-            # RecallHit has node_id / content / meta_type / similarity
-            score = h.get("similarity")
-            node_id = h.get("node_id") or h.get("id")
-            meta = h.get("meta_type", "")
-            prefix = (
-                f"- (#{node_id}, {meta}"
-                + (f", {score:.2f}" if isinstance(score, (int, float)) else "")
-                + ")"
-            )
-            lines.append(f"{prefix} {h.get('content', '')}")
+            # v4 recall is a typed list: 'node' (cognition) or 'item' (a
+            # structured item, synthesis in its fields).
+            if h.get("type") == "item" or h.get("item_id") is not None:
+                kind = h.get("kind", "")
+                name = h.get("name", "")
+                fields = h.get("fields") or {}
+                summary = json.dumps(fields, ensure_ascii=False) if fields else ""
+                lines.append(f"- [{kind}] {name} {summary}".rstrip())
+            else:
+                score = h.get("similarity")
+                node_id = h.get("node_id") or h.get("id")
+                meta = h.get("meta_type", "")
+                prefix = (
+                    f"- (#{node_id}, {meta}"
+                    + (f", {score:.2f}" if isinstance(score, (int, float)) else "")
+                    + ")"
+                )
+                lines.append(f"{prefix} {h.get('content', '')}")
         return "Relevant ConPort memories:\n" + "\n".join(lines)
 
     def sync_turn(
