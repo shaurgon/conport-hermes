@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "4.0.0"
+__version__ = "4.1.0"
 
 PROVIDER_NAME = "conport"
 
@@ -175,6 +175,15 @@ def _format_init_block(payload: dict[str, Any]) -> str | None:
             nid = node.get("id", "?")
             content = _truncate(str(node.get("content") or ""))
             lines.append(f"- [#{nid}] {content}")
+        lines.append("")
+
+    skills = payload.get("skills") or []
+    if skills:
+        lines.append("Skills — your authored loops (fetch the body with get_skill when one fits):")
+        for sk in skills:
+            name = sk.get("name", "?")
+            desc = _truncate(str(sk.get("description") or ""), 100)
+            lines.append(f"- {name}: {desc}" if desc else f"- {name}")
         lines.append("")
 
     mature_communities = payload.get("mature_communities") or []

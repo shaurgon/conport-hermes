@@ -15,7 +15,9 @@ A default ConPort agent is auto-created and bound to your Hermes profile in one 
 - **Structured domains (kinds)** — declare a domain once (`series`, `city`, a research topic) with fields + a status vocabulary; items are the domain's current state, their history is `event`s, a synthesis lives in the item's fields. The schema grows organically — unknown fields are accepted.
 - **Auto-bootstrap** — `agent_init` fires at session start; identity + principles + broadcast facts + declared `collections` + mature-community hints + any pending extraction populate the system prompt.
 - **Auto-recall** injected before every turn — **multi-strategy** (vector + keyword/FTS + graph-adjacency, fused via Reciprocal Rank Fusion), spanning cognition AND structured items, non-blocking, 2-second budget.
-- **13 agent tools** — 5 intent verbs + 8 aux (chat-turn / extract-thread / subgraph / entity-delete / event-query / promote-skill / run-start / run-finish).
+- **Authored loops as skills** — `write_skill` / `get_skill`: keep a reusable procedure as a markdown body in storage with a one-line description for discovery; the body is fetched on demand so it never bloats the session.
+- **Typed references between kinds** — declare `refs={field: target_kind}` in `create_kind`; the ref is validated on every write, and `get_referrers` reconstructs exact provenance (a topic's sources), owner-scoped.
+- **16 agent tools** — 5 intent verbs + skills (write/get) + refs (get_referrers) + 8 aux (chat-turn / extract-thread / subgraph / entity-delete / event-query / promote-skill / run-start / run-finish).
 - **Visibility model** — `private` (the agent's own), `shared` (the owner's agents), `broadcast` (always loaded; crystallized skills + core user facts).
 - **Skill emergence** — the backend surfaces `mature_communities`; the agent decides when to crystallize one into a `skill` via `agent_promote_skill`.
 - **CLI** — `hermes conport-hermes status | agent | recall | init`.

@@ -43,7 +43,7 @@ class ConPortClient:
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(
             base_url=self.base_url,
-            headers={"Authorization": f"Bearer {api_key}", "User-Agent": "conport-hermes/4.0.0"},
+            headers={"Authorization": f"Bearer {api_key}", "User-Agent": "conport-hermes/4.1.0"},
             timeout=default_timeout,
         )
 
@@ -70,14 +70,23 @@ class ConPortClient:
     # ── Intent: structured domains (kinds) ───────────────────────────
 
     def create_kind(
-        self, agent_uuid: str, name: str, fields: list[str], statuses: list[str] | None = None,
+        self, agent_uuid: str, name: str, fields: list[str],
+        statuses: list[str] | None = None, refs: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"agent_uuid": agent_uuid, "name": name, "fields": fields}
         if statuses:
             body["statuses"] = statuses
+        if refs:
+            body["refs"] = refs
         r = self._client.post("/api/v1/sphere/create-kind", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
+
+    def get_referrers(self, kind: str, name: str) -> list[dict[str, Any]]:
+        """Items whose declared ref points at (kind, name) — owner-scoped server-side."""
+        r = self._client.get("/api/v1/sphere/referrers", params={"kind": kind, "name": name})
+        r.raise_for_status()
+        return _list_under(r.json(), "referrers")
 
     def get_kind(self, agent_uuid: str, name: str) -> KindInfo | None:
         # agent_uuid is accepted for surface symmetry; the REST endpoint scopes
@@ -152,6 +161,25 @@ class ConPortClient:
         # v4 recall returns a typed list under "results" (node|item); "nodes" is
         # a back-compat subset. Prefer results.
         return cast(list[RecallHit], _list_under(r.json(), "results", "nodes"))
+
+    # ── Intent: skills (authored loops — body in storage, on demand) ──
+
+    def write_skill(self, agent_uuid: str, name: str, description: str, body: str) -> dict[str, Any]:
+        r = self._client.post(
+            "/api/v1/sphere/skill",
+            json={"agent_uuid": agent_uuid, "name": name, "description": description, "body": body},
+        )
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def get_skill(self, name: str) -> dict[str, Any] | None:
+        # owner-scoped server-side; agent_uuid not needed (the descriptor is the
+        # owner's). Returns {name, description, body} or None if absent.
+        r = self._client.get(f"/api/v1/sphere/skill/{name}")
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
 
     # ── Aux: conversation intake ──────────────────────────────────────
 

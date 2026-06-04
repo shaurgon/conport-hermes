@@ -29,9 +29,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "filter/compare/update over time (cities you score, series you "
             "rate, research topics). 'fields' is the shape items carry; "
             "'statuses' is the controlled lifecycle vocabulary (enforced on "
-            "write). Pick ONE canonical name per domain ('series', not "
-            "'serial'/'shows'); check agent_init.collections first so you "
-            "reuse an existing kind instead of fragmenting it."
+            "write). 'refs' declares typed references to other kinds — "
+            "{field: target_kind} (e.g. a 'source' kind with refs={topic: "
+            "'topic'}); the ref field is validated on every write (it must name "
+            "a real item of the target kind, or you get unknown_ref). Pick ONE "
+            "canonical name per domain; check agent_init.collections first so "
+            "you reuse an existing kind instead of fragmenting it."
         ),
         "parameters": {
             "type": "object",
@@ -47,8 +50,31 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "items": {"type": "string"},
                     "description": "Allowed status values (controlled vocab).",
                 },
+                "refs": {
+                    "type": "object",
+                    "description": "Typed references {field_name: target_kind}, validated on write.",
+                },
             },
             "required": ["name", "fields"],
+        },
+    },
+
+    {
+        "name": "agent_get_referrers",
+        "description": (
+            "Find the items that reference this one — exact provenance. Given an "
+            "item (kind, name), return every item whose declared ref points at "
+            "it (for ('topic','mcp-security') you get its 'source' items). Exact "
+            "and exhaustive — use it to reconstruct what a synthesis rests on. "
+            "Unlike recall (ranked, fuzzy), this follows the declared refs."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "description": "The referenced item's kind."},
+                "name": {"type": "string", "description": "The referenced item's name."},
+            },
+            "required": ["kind", "name"],
         },
     },
 
@@ -175,6 +201,45 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
             },
             "required": ["query"],
+        },
+    },
+
+    # ── Skills: authored loops (body in storage, description for discovery) ──
+
+    {
+        "name": "agent_write_skill",
+        "description": (
+            "Author (or update) a reusable skill — your own loop / procedure. "
+            "The body (full markdown — your loop steps) is kept in storage; the "
+            "one-line description is what surfaces in agent_init and recall, so "
+            "future-you finds it without reloading the whole text. When you keep "
+            "doing the same structural work (nightly research, daily scoring), "
+            "write it down once here instead of re-improvising."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Canonical skill name, e.g. 'dream-topic-loop'."},
+                "description": {"type": "string", "description": "One line — when to run this and what it does."},
+                "body": {"type": "string", "description": "The full procedure (markdown)."},
+            },
+            "required": ["name", "description", "body"],
+        },
+    },
+
+    {
+        "name": "agent_get_skill",
+        "description": (
+            "Fetch a skill's full body on demand — one loop, not the whole pile. "
+            "Call when a skill description (from agent_init or recall) fits what "
+            "you're about to do; pull the body and follow it."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+            },
+            "required": ["name"],
         },
     },
 

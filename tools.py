@@ -41,9 +41,10 @@ def dispatch_tool(
 _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
     # intent verbs
     "agent_create_kind": lambda c, u, a: c.create_kind(
-        u, a["name"], list(a["fields"]), a.get("statuses"),
+        u, a["name"], list(a["fields"]), a.get("statuses"), a.get("refs"),
     ),
     "agent_get_kind": lambda c, u, a: c.get_kind(u, a["name"]) or {},
+    "agent_get_referrers": lambda c, u, a: c.get_referrers(a["kind"], a["name"]),
     "agent_remember": lambda c, u, a: c.remember(
         u,
         a.get("content"),
@@ -68,6 +69,9 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         limit=int(a.get("limit", 10)),
         scope=a.get("scope"),
     ),
+    # skills: authored loops
+    "agent_write_skill": lambda c, u, a: c.write_skill(u, a["name"], a["description"], a["body"]),
+    "agent_get_skill": lambda c, u, a: c.get_skill(a["name"]) or {},
     # aux: conversation intake
     "agent_chat_turn": lambda c, u, a: c.chat_turn(u, a["role"], a["text"]),
     "agent_extract_thread": lambda c, u, a: c.extract_thread(u, list(a["message_ids"])),
