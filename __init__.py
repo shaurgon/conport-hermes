@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "4.2.0"
+__version__ = "4.3.0"
 
 PROVIDER_NAME = "conport"
 
@@ -271,6 +271,18 @@ def _format_init_block(payload: dict[str, Any]) -> str | None:
             preview = _truncate(str(bn.get("content_preview") or ""), 80)
             communities = bn.get("communities_visited") or []
             lines.append(f"- #{nid} {preview} (communities: {communities})")
+        lines.append("")
+
+    upd = payload.get("skill_update_available")
+    if upd and isinstance(upd, dict):
+        cur = upd.get("current", "unknown")
+        latest = upd.get("latest", "?")
+        guide = upd.get("install_guide", "")
+        lines.append(
+            f"[UPDATE] conport-hermes {cur} → {latest} available. Install: {guide}. "
+            "(Act on this signal — never hand-compare version numbers across "
+            "plugins/packages; they are independent lines.)"
+        )
         lines.append("")
 
     pending = payload.get("pending_extraction")

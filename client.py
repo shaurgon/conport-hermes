@@ -10,6 +10,7 @@ cport_live_… token.
 from __future__ import annotations
 
 import json
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import Any, TypeVar, cast
 
 import httpx
@@ -17,6 +18,15 @@ import httpx
 from .models import AgentInitPayload, AgentRecord, KindInfo, RecallHit
 
 _T = TypeVar("_T")
+
+# Read the installed package version (single source: pyproject.toml). Imported
+# via metadata, not from __init__, to avoid the circular import (__init__ pulls
+# in this module). Sent to agent_init so the backend can return a
+# skill_update_available signal — the agent never hand-compares (decision-808).
+try:
+    _HERMES_VERSION: str | None = _pkg_version("conport-hermes")
+except PackageNotFoundError:  # pragma: no cover — not installed as a dist
+    _HERMES_VERSION = None
 
 
 def _list_under(data: object, *keys: str) -> list[dict[str, Any]]:
@@ -63,7 +73,12 @@ class ConPortClient:
         return _as(AgentRecord, r.json())
 
     def agent_init(self, agent_uuid: str) -> AgentInitPayload:
-        r = self._client.post("/api/v1/sphere/init", json={"agent_uuid": agent_uuid})
+        r = self._client.post("/api/v1/sphere/init", json={
+            "agent_uuid": agent_uuid,
+            "skill_id": "conport-hermes",
+            "skill_version": _HERMES_VERSION,
+            "client_type": "hermes",
+        })
         r.raise_for_status()
         return _as(AgentInitPayload, r.json())
 
