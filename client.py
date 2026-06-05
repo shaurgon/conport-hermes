@@ -10,7 +10,6 @@ cport_live_… token.
 from __future__ import annotations
 
 import json
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import Any, TypeVar, cast
 
 import httpx
@@ -19,14 +18,24 @@ from .models import AgentInitPayload, AgentRecord, KindInfo, RecallHit
 
 _T = TypeVar("_T")
 
-# Read the installed package version (single source: pyproject.toml). Imported
-# via metadata, not from __init__, to avoid the circular import (__init__ pulls
-# in this module). Sent to agent_init so the backend can return a
-# skill_update_available signal — the agent never hand-compares (decision-808).
-try:
-    _HERMES_VERSION: str | None = _pkg_version("conport-hermes")
-except PackageNotFoundError:  # pragma: no cover — not installed as a dist
-    _HERMES_VERSION = None
+
+def _provider_version() -> str | None:
+    """The running provider's version — ``__version__`` from this package.
+
+    NOT ``importlib.metadata``: in the real Hermes deployment the plugin is a
+    flat file layout (sync copies ``conport_hermes/`` to the plugin root, no
+    pyproject / dist-info), so metadata lookup raises and we'd report nothing.
+    ``__version__`` ships inside ``__init__.py`` and is the single source the
+    bump keeps in lockstep with plugin.yaml. Lazy import dodges the circular
+    dependency (``__init__`` imports this module). Sent to agent_init so the
+    backend returns skill_update_available — the agent never hand-compares
+    (decision-808).
+    """
+    try:
+        from . import __version__
+        return __version__
+    except Exception:  # pragma: no cover — defensive
+        return None
 
 
 def _list_under(data: object, *keys: str) -> list[dict[str, Any]]:
@@ -76,7 +85,7 @@ class ConPortClient:
         r = self._client.post("/api/v1/sphere/init", json={
             "agent_uuid": agent_uuid,
             "skill_id": "conport-hermes",
-            "skill_version": _HERMES_VERSION,
+            "skill_version": _provider_version(),
             "client_type": "hermes",
         })
         r.raise_for_status()

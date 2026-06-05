@@ -15,7 +15,11 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "4.3.0"
+# Single source of truth for the running version. Keep in LOCKSTEP on every
+# bump: pyproject.toml `version`, plugin.yaml `version` (what Hermes displays),
+# CHANGELOG.md, and backend LATEST_SKILL_VERSIONS["conport-hermes"]. Missing
+# plugin.yaml once already showed the host a stale 4.1.0 (decision-808).
+__version__ = "4.3.1"
 
 PROVIDER_NAME = "conport"
 
