@@ -15,7 +15,7 @@ from .client import ConPortClient
 from .models import IdentityFile, ProviderConfig
 from .tools import TOOL_SCHEMAS, dispatch_tool
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"
 
 PROVIDER_NAME = "conport"
 
@@ -45,6 +45,44 @@ ConPort's job.
 | `agent_create_kind(name, fields, statuses)` | Declare a structured domain, once (like a table). |
 | `agent_get_kind(name)` | Read a domain's form before writing items. |
 | `agent_event(kind, name, note, fields?)` | Log a change/what-happened on an item (its timeline). |
+
+---
+
+### Recall before you act (read-first, not write-only)
+
+Your memory is **read-first**. You write diligently; the failure is acting
+without reading. Before you act on a conclusion — about the world OR about
+yourself — `agent_recall` first.
+
+**Never rebuild from a blank-looking surface.** When your own skill, file,
+config, or state looks *empty, wrong, or missing*, that is a recall query —
+NOT a signal to rebuild it from scratch. You may have changed it yourself
+recently and just not be looking at the record.
+
+- WRONG: "my main skill is empty → I'll rebuild it" (this destroys your own work)
+- RIGHT: `agent_recall("<the skill/topic>", scope={meta_types:["skill"]})` +
+  read `recent_self_changes` in this prompt, THEN — only if it's genuinely
+  gone — rebuild.
+
+This applies hardest on **diagnose turns** ("what happened", "разберись", "why
+this error", "fix this"): first move is `agent_recall` of the area + your
+`recent_self_changes`, THEN inspect the live state. The live surface and your
+memory of changing it are two sources — reconcile them, don't trust the live
+one blindly and overwrite your own record.
+
+**Record what you change about yourself.** When you edit your own skill, cron,
+loop, or config, immediately log it so future-you can recall it:
+
+```
+agent_remember("2026-06-04 rewrote research-loop: topic/source split, cron "
+               "nightly — reason: old approach buried sources",
+               meta_type="skill", visibility="broadcast")
+```
+
+A self-change you don't record is one you will later mistake for a bug and
+revert. And when you say "stored as authored skill X", you MUST actually call
+`agent_write_skill(X, …)` — verify X appears in `skills` next `agent_init`; a
+node that only *describes* the skill is not the skill.
 
 ---
 
@@ -112,7 +150,11 @@ value lives (`$API_KEY` env var) instead.
 - `agent_init` done? `bootstrap_state` checked? (new → write identity + principles first)
 - `pending_extraction` present → `agent_extract_thread` first?
 - Glanced at `collections` — reusing existing domains, not reinventing?
+- Read `recent_self_changes` before touching your own skills/config/loops?
 - Task arrived? First move = `agent_recall`, not `agent_remember`.
+- Diagnose turn ("what happened"/"fix this") → `agent_recall` + `recent_self_changes` BEFORE inspecting/rebuilding?
+- A surface looked empty/wrong → recalled your own changes before rebuilding (never rebuild blind)?
+- Changed your own skill/cron/config → logged it as a self-change `agent_remember`?
 - Structured domain → `agent_create_kind` once + `agent_get_kind` before writing items?
 - Item state → `agent_remember(kind,…)`; what-happened → `agent_event`; never list-as-item?
 - Free thought → `agent_remember(content)` with the right visibility?
@@ -172,6 +214,18 @@ def _format_init_block(payload: dict[str, Any]) -> str | None:
     if broadcast_facts:
         lines.append("Broadcast facts (collective layer, always loaded):")
         for node in broadcast_facts:
+            nid = node.get("id", "?")
+            content = _truncate(str(node.get("content") or ""))
+            lines.append(f"- [#{nid}] {content}")
+        lines.append("")
+
+    recent_self_changes = payload.get("recent_self_changes") or []
+    if recent_self_changes:
+        lines.append(
+            "What YOU changed about yourself recently (last 7 days) — "
+            "read this before touching your own skills/config/loops:"
+        )
+        for node in recent_self_changes:
             nid = node.get("id", "?")
             content = _truncate(str(node.get("content") or ""))
             lines.append(f"- [#{nid}] {content}")
