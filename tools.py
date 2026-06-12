@@ -54,6 +54,7 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         kind=a.get("kind"),
         name=a.get("name"),
         fields=a.get("fields"),
+        relevant_until=a.get("relevant_until"),
     ),
     "agent_event": lambda c, u, a: c.event(
         u,
@@ -80,6 +81,7 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         u, int(a["root_node_id"]), depth=int(a.get("depth", 2)),
     ),
     "agent_graph_stats": lambda c, u, a: c.graph_stats(u),
+    "agent_node_forget": lambda c, u, a: c.node_forget(u, int(a["node_id"])),
     "agent_entity_delete": lambda c, u, a: c.entity_delete(a["kind"], a["name"]),
     "agent_event_query": lambda c, u, a: c.event_query(
         entity_id=a.get("entity_id"),

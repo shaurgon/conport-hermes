@@ -144,6 +144,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "kind": {"type": "string", "description": "Declared kind name (structured-item form)."},
                 "name": {"type": "string", "description": "Item name within the kind (structured-item form)."},
                 "fields": {"type": "object", "description": "Item attributes incl. an optional 'status'."},
+                "relevant_until": {
+                    "type": "string",
+                    "description": (
+                        "Optional validity horizon, ISO 8601 (either form). "
+                        "Past it the memory drops in recall rank — it is NOT "
+                        "deleted. Set it for operationally-scoped notes "
+                        "(days); leave unset for durable knowledge."
+                    ),
+                },
             },
         },
     },
@@ -180,8 +189,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "item's synthesis rides in its 'fields'). Always call this before "
             "answering any question about prior context — recall holds more "
             "than the context window. Use scope to narrow: meta_types, "
-            "visibility, kind (only that domain's items), or a since/until "
-            "time range."
+            "visibility, kind (only that domain's items), a since/until time "
+            "range, or include_superseded. By default nodes replaced via "
+            "supersedes edges (consolidation) are excluded — only the current "
+            "version surfaces; set include_superseded=true to see history."
         ),
         "parameters": {
             "type": "object",
@@ -197,6 +208,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "community_id": {"type": "integer"},
                         "since": {"type": "string", "description": "ISO 8601 timestamp — created_at >= since"},
                         "until": {"type": "string", "description": "ISO 8601 timestamp — created_at <= until"},
+                        "include_superseded": {
+                            "type": "boolean",
+                            "description": (
+                                "Also return nodes replaced via supersedes edges "
+                                "(excluded by default) — audit / history navigation."
+                            ),
+                        },
                     },
                 },
             },
@@ -310,6 +328,24 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "parameters": {
             "type": "object",
             "properties": {},
+        },
+    },
+
+    {
+        "name": "agent_node_forget",
+        "description": (
+            "Forget one of YOUR memory nodes — hides it from recall/init "
+            "permanently (the row is kept server-side; irreversible from "
+            "here). Use after consolidation when an old node actively "
+            "misleads; prefer supersedes edges when a replacement exists. "
+            "For structured items use agent_entity_delete instead."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "integer", "description": "Node id from a recall result of type 'node'."},
+            },
+            "required": ["node_id"],
         },
     },
 

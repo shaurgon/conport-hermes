@@ -129,10 +129,13 @@ class ConPortClient:
         edges: list[dict[str, Any]] | None = None,
         kind: str | None = None, name: str | None = None,
         fields: dict[str, Any] | None = None,
+        relevant_until: str | None = None,
         timeout: float | None = None,
     ) -> dict[str, Any]:
         """Dual-mode. ``kind`` set → structured item (kind/name/fields); else →
         free cognition node (content + optional meta_type/visibility/edges).
+        ``relevant_until`` (ISO 8601) applies to either path — a validity
+        horizon past which the memory drops in recall rank (never deleted).
         Routing happens server-side; this just forwards the right keys."""
         body: dict[str, Any] = {"agent_uuid": agent_uuid}
         if kind is not None:
@@ -149,6 +152,8 @@ class ConPortClient:
                 body["visibility"] = visibility
             if edges:
                 body["edges"] = edges
+        if relevant_until:
+            body["relevant_until"] = relevant_until
         r = self._client.post("/api/v1/sphere/remember", json=body,
                               timeout=timeout or self._client.timeout)
         r.raise_for_status()
@@ -230,6 +235,14 @@ class ConPortClient:
     def graph_stats(self, agent_uuid: str) -> dict[str, Any]:
         r = self._client.get("/api/v1/sphere/graph-stats",
                              params={"agent_uuid": agent_uuid})
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def node_forget(self, agent_uuid: str, node_id: int) -> dict[str, Any]:
+        """Soft-forget a cognition node — hidden from every read surface,
+        row kept server-side. Irreversible from the agent surface."""
+        r = self._client.post("/api/v1/sphere/node-forget",
+                              json={"agent_uuid": agent_uuid, "node_id": node_id})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
