@@ -249,6 +249,21 @@ class ConPortClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
+    def node_mute(self, agent_uuid: str, node_id: int) -> dict[str, Any]:
+        """Per-viewer mute — hide a node from THIS agent's reads only.
+        Reversible via node_unmute; the shared corpus is untouched."""
+        r = self._client.post("/api/v1/sphere/node-mute",
+                              json={"agent_uuid": agent_uuid, "node_id": node_id})
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def node_unmute(self, agent_uuid: str, node_id: int) -> dict[str, Any]:
+        """Reverse a per-viewer mute — the node surfaces in reads again."""
+        r = self._client.post("/api/v1/sphere/node-unmute",
+                              json={"agent_uuid": agent_uuid, "node_id": node_id})
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
     def _entity_get(self, kind: str, name: str) -> dict[str, Any] | None:
         """Resolve a structured item to its row (internal — for entity_delete).
 

@@ -83,6 +83,8 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
     ),
     "agent_graph_stats": lambda c, u, a: c.graph_stats(u),
     "agent_node_forget": lambda c, u, a: c.node_forget(u, int(a["node_id"])),
+    "agent_node_mute": lambda c, u, a: c.node_mute(u, int(a["node_id"])),
+    "agent_node_unmute": lambda c, u, a: c.node_unmute(u, int(a["node_id"])),
     "agent_entity_delete": lambda c, u, a: c.entity_delete(a["kind"], a["name"]),
     "agent_event_query": lambda c, u, a: c.event_query(
         entity_id=a.get("entity_id"),

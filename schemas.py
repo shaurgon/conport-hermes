@@ -360,10 +360,45 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
 
     {
+        "name": "agent_node_mute",
+        "description": (
+            "Mute a node — hide someone else's noise from YOUR recall. "
+            "Reversible (agent_node_unmute brings it back); the shared "
+            "corpus is untouched, other agents still see it. Contrast: "
+            "agent_node_forget is irreversible, creator-only, and hides "
+            "from everyone — that one is for YOUR own noise."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "integer", "description": "Node id from a recall result of type 'node'."},
+            },
+            "required": ["node_id"],
+        },
+    },
+
+    {
+        "name": "agent_node_unmute",
+        "description": (
+            "Reverse a mute — a node you previously muted surfaces in your "
+            "recall again. Idempotent."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "integer"},
+            },
+            "required": ["node_id"],
+        },
+    },
+
+    {
         "name": "agent_entity_delete",
         "description": (
-            "Delete a structured item (and its events) by (kind, name) — to "
-            "fix a mistake (wrong kind, duplicate) instead of leaving junk."
+            "Soft-delete a structured item by (kind, name) — to fix a "
+            "mistake (wrong kind, duplicate) instead of leaving junk. Its "
+            "events/timeline survive server-side, and re-remembering the "
+            "same (kind, name) resurrects the item."
         ),
         "parameters": {
             "type": "object",
