@@ -150,7 +150,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "Optional validity horizon, ISO 8601 (either form). "
                         "Past it the memory drops in recall rank — it is NOT "
                         "deleted. Set it for operationally-scoped notes "
-                        "(days); leave unset for durable knowledge."
+                        "(days); leave unset for durable knowledge. The "
+                        "special value 'clear' resets a previously set "
+                        "horizon back to indefinite."
                     ),
                 },
             },

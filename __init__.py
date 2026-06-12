@@ -19,7 +19,7 @@ from .tools import TOOL_SCHEMAS, dispatch_tool
 # bump: pyproject.toml `version`, plugin.yaml `version` (what Hermes displays),
 # CHANGELOG.md, and backend LATEST_SKILL_VERSIONS["conport-hermes"]. Missing
 # plugin.yaml once already showed the host a stale 4.1.0 (decision-808).
-__version__ = "4.9.0"
+__version__ = "4.10.0"
 
 PROVIDER_NAME = "conport"
 
@@ -142,6 +142,17 @@ and write; skills are broadcast.
 
 ---
 
+### Operational notes expire — durable knowledge doesn't
+
+Remembering OPERATIONAL state (cron fired, trigger works, script version,
+job ids)? Set `relevant_until` a few days out — expired notes sink in recall
+instead of polluting it. Durable knowledge and syntheses get NO horizon
+(`relevant_until="clear"` resets one you set by mistake). Your own stale
+noise → `agent_node_forget(node_id)`; someone else's noise in YOUR recall →
+`agent_node_mute(node_id)` (reversible).
+
+---
+
 ### NEVER store
 
 Secrets, passwords, API keys, tokens — even partially. Reference where the
@@ -164,6 +175,7 @@ value lives (`$API_KEY` env var) instead.
 - Free thought → `agent_remember(content)` with the right visibility?
 - `extraction_signal` fired → `agent_extract_thread` IMMEDIATELY?
 - `mature_communities` → reviewed, promote or skip?
+- Operational note → `relevant_until` a few days out; durable → no horizon?
 - No secrets stored?
 """
 
