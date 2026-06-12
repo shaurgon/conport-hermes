@@ -198,6 +198,16 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
+                "intent": {
+                    "type": "string",
+                    "description": (
+                        "Optional statement of what you're trying to "
+                        "accomplish — sharpens ranking beyond topic "
+                        "similarity (granularity, content-type, "
+                        "current-vs-history). E.g. 'current state, not "
+                        "history'. Leave unset for simple lookups."
+                    ),
+                },
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                 "scope": {
                     "type": "object",

@@ -179,11 +179,14 @@ class ConPortClient:
 
     def recall(
         self, agent_uuid: str, query: str, *, limit: int = 10,
-        scope: dict[str, Any] | None = None, timeout: float | None = None,
+        scope: dict[str, Any] | None = None, intent: str | None = None,
+        timeout: float | None = None,
     ) -> list[RecallHit]:
         params: dict[str, Any] = {"q": query, "limit": limit, "agent_uuid": agent_uuid}
         if scope:
             params["scope"] = json.dumps(scope)
+        if intent:
+            params["intent"] = intent
         r = self._client.get("/api/v1/sphere/recall", params=params,
                              timeout=timeout or self._client.timeout)
         r.raise_for_status()

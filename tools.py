@@ -69,6 +69,7 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         a["query"],
         limit=int(a.get("limit", 10)),
         scope=a.get("scope"),
+        intent=a.get("intent"),
     ),
     # skills: authored loops
     "agent_write_skill": lambda c, u, a: c.write_skill(u, a["name"], a["description"], a["body"]),
