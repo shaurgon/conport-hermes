@@ -300,6 +300,20 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
 
     {
+        "name": "agent_graph_stats",
+        "description": (
+            "Statistics over your OWN sphere graph: visible nodes/edges by "
+            "type + workspace item count. The right tool for 'how big is my "
+            "memory' — it counts exactly what agent_recall can retrieve. It "
+            "does NOT measure the project knowledge graph."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+
+    {
         "name": "agent_entity_delete",
         "description": (
             "Delete a structured item (and its events) by (kind, name) — to "

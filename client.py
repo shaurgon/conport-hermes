@@ -227,6 +227,12 @@ class ConPortClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
+    def graph_stats(self, agent_uuid: str) -> dict[str, Any]:
+        r = self._client.get("/api/v1/sphere/graph-stats",
+                             params={"agent_uuid": agent_uuid})
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
     def _entity_get(self, kind: str, name: str) -> dict[str, Any] | None:
         """Resolve a structured item to its row (internal — for entity_delete).
 

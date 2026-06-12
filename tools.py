@@ -79,6 +79,7 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
     "agent_get_subgraph": lambda c, u, a: c.get_subgraph(
         u, int(a["root_node_id"]), depth=int(a.get("depth", 2)),
     ),
+    "agent_graph_stats": lambda c, u, a: c.graph_stats(u),
     "agent_entity_delete": lambda c, u, a: c.entity_delete(a["kind"], a["name"]),
     "agent_event_query": lambda c, u, a: c.event_query(
         entity_id=a.get("entity_id"),
