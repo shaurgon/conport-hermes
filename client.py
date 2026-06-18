@@ -159,6 +159,25 @@ class ConPortClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
+    # ── Intent: link (edge between two existing cognition nodes) ───────
+
+    def link(
+        self, agent_uuid: str, from_node_id: int, to_node_id: int,
+        edge_type: str,
+    ) -> dict[str, Any]:
+        """Assert an explicit edge between two EXISTING cognition nodes.
+        New nodes auto-link by meaning and remember(edges=…) covers
+        new→existing; this covers the existing→existing case. ``edge_type`` is
+        one of semantic/derived_from/temporal/skill_of/competing_view/
+        supersedes."""
+        body = {
+            "agent_uuid": agent_uuid, "from_node_id": from_node_id,
+            "to_node_id": to_node_id, "edge_type": edge_type,
+        }
+        r = self._client.post("/api/v1/sphere/link", json=body)
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
     # ── Intent: event (change on a structured item) ───────────────────
 
     def event(

@@ -6,8 +6,9 @@ The schemas (what the LLM sees) live in ``schemas.py``; this module wires each
 schema name to a ``ConPortClient`` call. ``TOOL_SCHEMAS`` is re-exported here so
 ``from .tools import TOOL_SCHEMAS`` keeps working.
 
-v4.0.0 — Agent Intent-API (doc-101): create_kind / get_kind / remember / event /
-recall + aux (chat intake, subgraph, timeline, cleanup, runs, skill promotion).
+v4.0.0 — Agent Intent-API (doc-101): create_kind / get_kind / remember / link /
+event / recall + aux (chat intake, subgraph, timeline, cleanup, runs, skill
+promotion).
 """
 
 from __future__ import annotations
@@ -55,6 +56,12 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         name=a.get("name"),
         fields=a.get("fields"),
         relevant_until=a.get("relevant_until"),
+    ),
+    "agent_link": lambda c, u, a: c.link(
+        u,
+        int(a["from_node_id"]),
+        int(a["to_node_id"]),
+        a["edge_type"],
     ),
     "agent_event": lambda c, u, a: c.event(
         u,

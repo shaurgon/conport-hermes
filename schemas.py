@@ -1,12 +1,13 @@
 """Tool schemas — what the LLM sees (the agent-facing intent surface).
 
 v4.0.0 — Agent Intent-API (doc-101). The agent works with intent verbs
-(create_kind / get_kind / remember / event / recall); ConPort owns storage. The
-old storage primitives (entity_upsert/get/list, event_record, projection_*,
-link_node_to_entity) are gone from the surface — ``remember(kind,…)`` writes a
-structured item, ``event`` logs its changes, ``recall`` finds everything, and
-connections are built by ConPort. A few aux verbs remain for needs the five
-don't cover (chat intake, timeline, cleanup, runs, skill promotion).
+(create_kind / get_kind / remember / link / event / recall); ConPort owns
+storage. The old storage primitives (entity_upsert/get/list, event_record,
+projection_*, link_node_to_entity) are gone from the surface — ``remember(kind,…)``
+writes a structured item, ``event`` logs its changes, ``recall`` finds
+everything; connections are auto-built by ConPort by meaning and can be asserted
+explicitly with ``remember(edges=…)`` / ``link``. A few aux verbs remain for
+needs the core don't cover (chat intake, timeline, cleanup, runs, skill promotion).
 
 Schemas live here; their handlers (the dispatch table that wires each schema to
 a ``ConPortClient`` call) live in ``tools.py``. ``get_tool_schemas`` returns
@@ -156,6 +157,36 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     ),
                 },
             },
+        },
+    },
+
+    {
+        "name": "agent_link",
+        "description": (
+            "Assert an explicit edge between two cognition nodes you already "
+            "remembered. ConPort auto-links new memories by meaning, and "
+            "remember(edges=…) connects a new node to existing ones — use "
+            "agent_link for the remaining case: relating two nodes that BOTH "
+            "already exist (a fact you recalled now belongs under a thesis you "
+            "stated earlier). Node ids come from remember/recall. edge_type: "
+            "'supersedes' (source replaces target), 'derived_from' (source "
+            "distilled from target), 'temporal' (time-ordered), 'competing_view', "
+            "'skill_of', 'semantic'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "from_node_id": {"type": "integer", "description": "Source node id (yours)."},
+                "to_node_id": {"type": "integer", "description": "Target node id (yours)."},
+                "edge_type": {
+                    "type": "string",
+                    "enum": [
+                        "semantic", "derived_from", "temporal",
+                        "skill_of", "competing_view", "supersedes",
+                    ],
+                },
+            },
+            "required": ["from_node_id", "to_node_id", "edge_type"],
         },
     },
 
