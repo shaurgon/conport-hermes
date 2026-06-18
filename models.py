@@ -104,7 +104,7 @@ class KindInfo(TypedDict, total=False):
     kind: str
     fields: list[str]
     statuses: list[str]
-    refs: dict[str, str]   # {field_name: target_kind} — typed references
+    refs: dict[str, Any]   # {field_name: target_kind} or {field_name: {kind, multi}} — typed references
     description: str | None
     count: int
 

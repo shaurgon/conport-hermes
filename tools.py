@@ -62,6 +62,7 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         int(a["from_node_id"]),
         int(a["to_node_id"]),
         a["edge_type"],
+        a.get("properties"),
     ),
     "agent_event": lambda c, u, a: c.event(
         u,
@@ -84,6 +85,12 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
     # aux: conversation intake
     "agent_chat_turn": lambda c, u, a: c.chat_turn(u, a["role"], a["text"]),
     "agent_extract_thread": lambda c, u, a: c.extract_thread(u, list(a["message_ids"])),
+    "agent_extract_into": lambda c, u, a: c.extract_into(
+        u,
+        int(a["item_id"]),
+        list(a["nodes"]),
+        edges=a.get("edges"),
+    ),
     # aux: explore / timeline / cleanup
     "agent_get_subgraph": lambda c, u, a: c.get_subgraph(
         u, int(a["root_node_id"]), depth=int(a.get("depth", 2)),

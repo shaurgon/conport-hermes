@@ -60,9 +60,10 @@ class ConPortClient:
 
     def __init__(self, base_url: str, api_key: str, *, default_timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
+        user_agent = f"conport-hermes/{_provider_version() or 'unknown'}"
         self._client = httpx.Client(
             base_url=self.base_url,
-            headers={"Authorization": f"Bearer {api_key}", "User-Agent": "conport-hermes/4.1.0"},
+            headers={"Authorization": f"Bearer {api_key}", "User-Agent": user_agent},
             timeout=default_timeout,
         )
 
@@ -95,8 +96,12 @@ class ConPortClient:
 
     def create_kind(
         self, agent_uuid: str, name: str, fields: list[str],
-        statuses: list[str] | None = None, refs: dict[str, str] | None = None,
+        statuses: list[str] | None = None,
+        refs: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        # ``refs`` values are either the legacy scalar ``target_kind`` or the
+        # array form ``{"kind": target_kind, "multi": true}`` (decision-852).
+        # No client-side validation — the server owns it; we forward verbatim.
         body: dict[str, Any] = {"agent_uuid": agent_uuid, "name": name, "fields": fields}
         if statuses:
             body["statuses"] = statuses
@@ -163,17 +168,22 @@ class ConPortClient:
 
     def link(
         self, agent_uuid: str, from_node_id: int, to_node_id: int,
-        edge_type: str,
+        edge_type: str, properties: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Assert an explicit edge between two EXISTING cognition nodes.
         New nodes auto-link by meaning and remember(edges=…) covers
         new→existing; this covers the existing→existing case. ``edge_type`` is
-        one of semantic/derived_from/temporal/skill_of/competing_view/
-        supersedes."""
-        body = {
+        one of the 12 vocab types (6 structural: semantic/derived_from/temporal/
+        skill_of/competing_view/supersedes — 6 domain: unifies/introduces/cites/
+        uses_method/reports_finding/refines); the server validates it.
+        ``properties`` is optional edge metadata (confidence in 0..1,
+        source_item, evidence_section, note; unknown keys allowed)."""
+        body: dict[str, Any] = {
             "agent_uuid": agent_uuid, "from_node_id": from_node_id,
             "to_node_id": to_node_id, "edge_type": edge_type,
         }
+        if properties:
+            body["properties"] = properties
         r = self._client.post("/api/v1/sphere/link", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
@@ -243,6 +253,28 @@ class ConPortClient:
     def extract_thread(self, agent_uuid: str, message_ids: list[int]) -> dict[str, Any]:
         r = self._client.post("/api/v1/sphere/extract-thread",
                               json={"agent_uuid": agent_uuid, "message_ids": message_ids})
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def extract_into(
+        self, agent_uuid: str, item_id: int, nodes: list[dict[str, Any]], *,
+        edges: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Batch-create agent-extracted nodes + edges under a source item
+        (decision-853 — pure storage, no backend LLM; the AGENT did the
+        extraction). Each new node is auto-stamped ``derived_from`` the source
+        ``item_id``. ``nodes`` is a list of ``{content, meta_type?,
+        visibility?}``. ``edges`` reference the new nodes by index:
+        ``{from_index, to_index, edge_type, properties?}`` between two new nodes,
+        or ``{from_index, target_node_id, edge_type, properties?}`` to a
+        pre-existing owned node. Returns ``{item_id, node_ids, nodes_created,
+        edges_created, derived_from_created, edge_errors?}``."""
+        body: dict[str, Any] = {
+            "agent_uuid": agent_uuid, "item_id": item_id, "nodes": nodes,
+        }
+        if edges:
+            body["edges"] = edges
+        r = self._client.post("/api/v1/sphere/extract-into", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 

@@ -32,8 +32,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "'statuses' is the controlled lifecycle vocabulary (enforced on "
             "write). 'refs' declares typed references to other kinds — "
             "{field: target_kind} (e.g. a 'source' kind with refs={topic: "
-            "'topic'}); the ref field is validated on every write (it must name "
-            "a real item of the target kind, or you get unknown_ref). Pick ONE "
+            "'topic'}); a field can also name a LIST of items of one kind via "
+            "{field: {kind: target_kind, multi: true}}. The ref field is "
+            "validated on every write (each element must name a real item of "
+            "the target kind, or you get unknown_ref). Pick ONE "
             "canonical name per domain; check agent_init.collections first so "
             "you reuse an existing kind instead of fragmenting it."
         ),
@@ -53,7 +55,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
                 "refs": {
                     "type": "object",
-                    "description": "Typed references {field_name: target_kind}, validated on write.",
+                    "description": (
+                        "Typed references, validated on write. Scalar form "
+                        "{field_name: target_kind}, or array form "
+                        "{field_name: {kind: target_kind, multi: true}} for a "
+                        "field that names a list of items of one kind."
+                    ),
                 },
             },
             "required": ["name", "fields"],
@@ -135,7 +142,17 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                                 "enum": [
                                     "semantic", "derived_from", "temporal",
                                     "skill_of", "competing_view", "supersedes",
+                                    "unifies", "introduces", "cites",
+                                    "uses_method", "reports_finding", "refines",
                                 ],
+                            },
+                            "properties": {
+                                "type": "object",
+                                "description": (
+                                    "Optional edge metadata: confidence (0..1), "
+                                    "source_item, evidence_section, note. "
+                                    "Unknown keys allowed."
+                                ),
                             },
                         },
                         "required": ["target_node_id", "edge_type"],
@@ -168,10 +185,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "remember(edges=…) connects a new node to existing ones — use "
             "agent_link for the remaining case: relating two nodes that BOTH "
             "already exist (a fact you recalled now belongs under a thesis you "
-            "stated earlier). Node ids come from remember/recall. edge_type: "
-            "'supersedes' (source replaces target), 'derived_from' (source "
-            "distilled from target), 'temporal' (time-ordered), 'competing_view', "
-            "'skill_of', 'semantic'."
+            "stated earlier). Node ids come from remember/recall. edge_type is "
+            "one of 12 types — structural: 'supersedes' (source replaces "
+            "target), 'derived_from' (source distilled from target), 'temporal' "
+            "(time-ordered), 'competing_view', 'skill_of', 'semantic'; domain: "
+            "'unifies', 'introduces', 'cites', 'uses_method', 'reports_finding', "
+            "'refines'. Optional 'properties' carries edge metadata "
+            "(confidence 0..1, source_item, evidence_section, note)."
         ),
         "parameters": {
             "type": "object",
@@ -183,7 +203,16 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "enum": [
                         "semantic", "derived_from", "temporal",
                         "skill_of", "competing_view", "supersedes",
+                        "unifies", "introduces", "cites",
+                        "uses_method", "reports_finding", "refines",
                     ],
+                },
+                "properties": {
+                    "type": "object",
+                    "description": (
+                        "Optional edge metadata: confidence (0..1), "
+                        "source_item, evidence_section, note. Unknown keys allowed."
+                    ),
                 },
             },
             "required": ["from_node_id", "to_node_id", "edge_type"],
@@ -338,6 +367,83 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "message_ids": {"type": "array", "items": {"type": "integer"}, "minItems": 1},
             },
             "required": ["message_ids"],
+        },
+    },
+
+    {
+        "name": "agent_extract_into",
+        "description": (
+            "Batch-record memories YOU extracted from a source item, with their "
+            "provenance auto-wired. You did the reading and the extraction; this "
+            "hands ConPort the finished nodes + edges in one call (no LLM runs "
+            "server-side). Each new node is auto-linked 'derived_from' the "
+            "source item_id — so the provenance is never lost. Use after "
+            "distilling a document/artifact into several facts/observations you "
+            "want connected. 'nodes' is a list of {content, meta_type?, "
+            "visibility?}. 'edges' connect the new nodes by their INDEX in "
+            "'nodes': {from_index, to_index, edge_type, properties?} between two "
+            "new nodes, or {from_index, target_node_id, edge_type, properties?} "
+            "to a pre-existing node. A bad node aborts the whole batch; bad "
+            "edges are reported per-edge in edge_errors without losing the nodes."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item_id": {
+                    "type": "integer",
+                    "description": "Source item/node id the extractions derive from (must exist, be yours).",
+                },
+                "nodes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {"type": "string", "maxLength": 10000},
+                            "meta_type": {
+                                "type": "string",
+                                "enum": ["identity", "principle", "fact", "observation", "skill", "artifact"],
+                            },
+                            "visibility": {
+                                "type": "string",
+                                "enum": ["private", "shared", "broadcast"],
+                            },
+                        },
+                        "required": ["content"],
+                    },
+                    "description": "The extracted memories. meta_type defaults to 'observation', visibility to 'shared'.",
+                },
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "from_index": {"type": "integer", "description": "Index into 'nodes' (source)."},
+                            "to_index": {"type": "integer", "description": "Index into 'nodes' (target — new node)."},
+                            "target_node_id": {"type": "integer", "description": "Target an EXISTING owned node instead of to_index."},
+                            "edge_type": {
+                                "type": "string",
+                                "enum": [
+                                    "semantic", "derived_from", "temporal",
+                                    "skill_of", "competing_view", "supersedes",
+                                    "unifies", "introduces", "cites",
+                                    "uses_method", "reports_finding", "refines",
+                                ],
+                            },
+                            "properties": {
+                                "type": "object",
+                                "description": (
+                                    "Optional edge metadata: confidence (0..1), "
+                                    "source_item, evidence_section, note."
+                                ),
+                            },
+                        },
+                        "required": ["from_index", "edge_type"],
+                    },
+                    "description": "Optional inter-node edges referencing the new nodes by index.",
+                },
+            },
+            "required": ["item_id", "nodes"],
         },
     },
 
