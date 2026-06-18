@@ -257,21 +257,39 @@ class ConPortClient:
         return cast(dict[str, Any], r.json())
 
     def extract_into(
-        self, agent_uuid: str, item_id: int, nodes: list[dict[str, Any]], *,
+        self, agent_uuid: str, item_id: int | None = None,
+        nodes: list[dict[str, Any]] | None = None, *,
         edges: list[dict[str, Any]] | None = None,
+        item_kind: str | None = None, item_name: str | None = None,
+        source_entity_id: int | None = None,
     ) -> dict[str, Any]:
-        """Batch-create agent-extracted nodes + edges under a source item
-        (decision-853 — pure storage, no backend LLM; the AGENT did the
-        extraction). Each new node is auto-stamped ``derived_from`` the source
-        ``item_id``. ``nodes`` is a list of ``{content, meta_type?,
-        visibility?}``. ``edges`` reference the new nodes by index:
-        ``{from_index, to_index, edge_type, properties?}`` between two new nodes,
-        or ``{from_index, target_node_id, edge_type, properties?}`` to a
-        pre-existing owned node. Returns ``{item_id, node_ids, nodes_created,
-        edges_created, derived_from_created, edge_errors?}``."""
-        body: dict[str, Any] = {
-            "agent_uuid": agent_uuid, "item_id": item_id, "nodes": nodes,
-        }
+        """Batch-create agent-extracted nodes + edges under a source
+        (decision-853 / decision-859 — pure storage, no backend LLM; the AGENT
+        did the extraction). Each new node is auto-stamped ``derived_from`` the
+        source.
+
+        Source is EXACTLY ONE of (server validates ``invalid_source``):
+        - a cognition NODE — ``item_id``; provenance is a ``derived_from``
+          ``harness_edge``. Returns ``item_id`` + ``derived_from_created``.
+        - a WORKSPACE ITEM — either the ``(item_kind, item_name)`` handle OR the
+          raw ``source_entity_id``; provenance rides the node↔item link. Returns
+          ``entity_id`` + ``entity_links_created``.
+
+        ``nodes`` is a list of ``{content, meta_type?, visibility?}``. ``edges``
+        reference the new nodes by index: ``{from_index, to_index, edge_type,
+        properties?}`` between two new nodes, or ``{from_index, target_node_id,
+        edge_type, properties?}`` to a pre-existing owned node. Returns
+        ``{node_ids, nodes_created, edges_created, edge_errors?}`` plus the
+        source-discriminated keys above."""
+        body: dict[str, Any] = {"agent_uuid": agent_uuid, "nodes": nodes or []}
+        if item_id is not None:
+            body["item_id"] = item_id
+        if item_kind is not None:
+            body["item_kind"] = item_kind
+        if item_name is not None:
+            body["item_name"] = item_name
+        if source_entity_id is not None:
+            body["source_entity_id"] = source_entity_id
         if edges:
             body["edges"] = edges
         r = self._client.post("/api/v1/sphere/extract-into", json=body)

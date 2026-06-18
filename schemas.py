@@ -373,25 +373,61 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "agent_extract_into",
         "description": (
-            "Batch-record memories YOU extracted from a source item, with their "
+            "Batch-record memories YOU extracted from a source, with their "
             "provenance auto-wired. You did the reading and the extraction; this "
             "hands ConPort the finished nodes + edges in one call (no LLM runs "
             "server-side). Each new node is auto-linked 'derived_from' the "
-            "source item_id — so the provenance is never lost. Use after "
-            "distilling a document/artifact into several facts/observations you "
-            "want connected. 'nodes' is a list of {content, meta_type?, "
-            "visibility?}. 'edges' connect the new nodes by their INDEX in "
-            "'nodes': {from_index, to_index, edge_type, properties?} between two "
-            "new nodes, or {from_index, target_node_id, edge_type, properties?} "
-            "to a pre-existing node. A bad node aborts the whole batch; bad "
-            "edges are reported per-edge in edge_errors without losing the nodes."
+            "source — so the provenance is never lost. Use after distilling a "
+            "document/artifact into several facts/observations you want "
+            "connected.\n"
+            "Pick EXACTLY ONE source (else invalid_source):\n"
+            "• a cognition NODE — 'item_id'; returns item_id + "
+            "derived_from_created.\n"
+            "• a WORKSPACE ITEM — either the ('item_kind','item_name') handle "
+            "(e.g. kind 'research_source') OR its raw 'source_entity_id'; edges "
+            "can't point at a workspace item so provenance rides the node↔item "
+            "link instead. Returns entity_id + entity_links_created.\n"
+            "'nodes' is a list of {content, meta_type?, visibility?}. 'edges' "
+            "connect the new nodes by their INDEX in 'nodes': {from_index, "
+            "to_index, edge_type, properties?} between two new nodes, or "
+            "{from_index, target_node_id, edge_type, properties?} to a "
+            "pre-existing node. A bad node aborts the whole batch; bad edges "
+            "are reported per-edge in edge_errors without losing the nodes."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "item_id": {
                     "type": "integer",
-                    "description": "Source item/node id the extractions derive from (must exist, be yours).",
+                    "description": (
+                        "NODE source — an EXISTING cognition node of yours the "
+                        "extractions derive from. Mutually exclusive with the "
+                        "workspace-item source params (item_kind+item_name / "
+                        "source_entity_id)."
+                    ),
+                },
+                "item_kind": {
+                    "type": "string",
+                    "description": (
+                        "WORKSPACE-ITEM source — the item's kind (its "
+                        "entity_type, e.g. 'research_source'). Pair with "
+                        "item_name."
+                    ),
+                },
+                "item_name": {
+                    "type": "string",
+                    "description": (
+                        "WORKSPACE-ITEM source — the item's name. Paired with "
+                        "item_kind; resolved owner-scoped (item_not_found if no "
+                        "such item is yours)."
+                    ),
+                },
+                "source_entity_id": {
+                    "type": "integer",
+                    "description": (
+                        "WORKSPACE-ITEM source — the raw item id, a convenience "
+                        "alternative to the (item_kind, item_name) handle."
+                    ),
                 },
                 "nodes": {
                     "type": "array",
@@ -443,7 +479,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "description": "Optional inter-node edges referencing the new nodes by index.",
                 },
             },
-            "required": ["item_id", "nodes"],
+            "required": ["nodes"],
         },
     },
 

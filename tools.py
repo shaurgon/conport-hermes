@@ -87,9 +87,14 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
     "agent_extract_thread": lambda c, u, a: c.extract_thread(u, list(a["message_ids"])),
     "agent_extract_into": lambda c, u, a: c.extract_into(
         u,
-        int(a["item_id"]),
+        int(a["item_id"]) if a.get("item_id") is not None else None,
         list(a["nodes"]),
         edges=a.get("edges"),
+        item_kind=a.get("item_kind"),
+        item_name=a.get("item_name"),
+        source_entity_id=(
+            int(a["source_entity_id"]) if a.get("source_entity_id") is not None else None
+        ),
     ),
     # aux: explore / timeline / cleanup
     "agent_get_subgraph": lambda c, u, a: c.get_subgraph(
