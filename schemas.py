@@ -568,6 +568,33 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
 
     {
+        "name": "agent_entity_list",
+        "description": (
+            "List the actual members of a kind — exact, exhaustive, "
+            "owner-scoped, ordered by name. Use when you need the WHOLE set of "
+            "items in a domain (every city you scored, every series you rated), "
+            "not a ranked guess. Contrast: agent_get_kind gives the form + a "
+            "member count only; agent_recall is fuzzy/ranked; agent_get_referrers "
+            "follows inverse refs. Optional 'attrs_filter' is a jsonb subset "
+            "match on the item fields (e.g. {status: 'wishlist'}); 'limit' caps "
+            "results (default 50, server clamps to ≤200). Returns "
+            "{entities, total}."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "description": "Kind name (the domain to enumerate)."},
+                "attrs_filter": {
+                    "type": "object",
+                    "description": "Optional jsonb subset match on item fields, e.g. {status: 'wishlist'}.",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+            },
+            "required": ["kind"],
+        },
+    },
+
+    {
         "name": "agent_entity_delete",
         "description": (
             "Soft-delete a structured item by (kind, name) — to fix a "

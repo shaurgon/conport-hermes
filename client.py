@@ -333,6 +333,22 @@ class ConPortClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
+    def entity_list(
+        self, kind: str, attrs_filter: dict[str, Any] | None = None, *, limit: int = 50,
+    ) -> dict[str, Any]:
+        """List the members of a kind — exact, exhaustive, owner-scoped, ordered
+        by name. Unlike recall (fuzzy/ranked) or get_referrers (inverse refs),
+        this returns the actual items of the kind. ``attrs_filter`` is an optional
+        jsonb subset match, forwarded JSON-encoded. Returns the raw
+        ``{entities, total}`` dict from the server (limit clamped server-side to
+        1..200)."""
+        params: dict[str, Any] = {"entity_type": kind, "limit": limit}
+        if attrs_filter is not None:
+            params["attrs_filter"] = json.dumps(attrs_filter)
+        r = self._client.get("/api/v1/workspace/entities", params=params)
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
     def _entity_get(self, kind: str, name: str) -> dict[str, Any] | None:
         """Resolve a structured item to its row (internal — for entity_delete).
 
