@@ -1,7 +1,7 @@
 """Synchronous REST client for the ConPort Agent Intent-API (v4) — doc-101.
 
 The agent works with **intent verbs** (create_kind / get_kind / remember /
-event / recall); ConPort owns storage. This client wraps the ``/sphere/*``
+event / recall); ConPort owns storage. This client wraps the ``/memory/*``
 intent endpoints plus a few aux operations the verbs don't cover (chat-turn,
 extract-thread, subgraph, entity delete, event timeline, runs). Auth via Bearer
 cport_live_… token.
@@ -56,7 +56,7 @@ def _as(record_type: type[_T], payload: object) -> _T:
 
 
 class ConPortClient:
-    """REST client for the v4 intent surface (``/sphere/*``) + aux."""
+    """REST client for the v4 intent surface (``/memory/*``) + aux."""
 
     def __init__(self, base_url: str, api_key: str, *, default_timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
@@ -83,7 +83,7 @@ class ConPortClient:
         return _as(AgentRecord, r.json())
 
     def agent_init(self, agent_uuid: str) -> AgentInitPayload:
-        r = self._client.post("/api/v1/sphere/init", json={
+        r = self._client.post("/api/v1/memory/init", json={
             "agent_uuid": agent_uuid,
             "skill_id": "conport-hermes",
             "skill_version": _provider_version(),
@@ -107,20 +107,20 @@ class ConPortClient:
             body["statuses"] = statuses
         if refs:
             body["refs"] = refs
-        r = self._client.post("/api/v1/sphere/create-kind", json=body)
+        r = self._client.post("/api/v1/memory/create-kind", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
     def get_referrers(self, kind: str, name: str) -> list[dict[str, Any]]:
         """Items whose declared ref points at (kind, name) — owner-scoped server-side."""
-        r = self._client.get("/api/v1/sphere/referrers", params={"kind": kind, "name": name})
+        r = self._client.get("/api/v1/memory/referrers", params={"kind": kind, "name": name})
         r.raise_for_status()
         return _list_under(r.json(), "referrers")
 
     def get_kind(self, agent_uuid: str, name: str) -> KindInfo | None:
         # agent_uuid is accepted for surface symmetry; the REST endpoint scopes
         # by the authenticated owner, not the agent.
-        r = self._client.get("/api/v1/sphere/kind", params={"name": name})
+        r = self._client.get("/api/v1/memory/kind", params={"name": name})
         if r.status_code == 404:
             return None
         r.raise_for_status()
@@ -159,7 +159,7 @@ class ConPortClient:
                 body["edges"] = edges
         if relevant_until:
             body["relevant_until"] = relevant_until
-        r = self._client.post("/api/v1/sphere/remember", json=body,
+        r = self._client.post("/api/v1/memory/remember", json=body,
                               timeout=timeout or self._client.timeout)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
@@ -184,7 +184,7 @@ class ConPortClient:
         }
         if properties:
             body["properties"] = properties
-        r = self._client.post("/api/v1/sphere/link", json=body)
+        r = self._client.post("/api/v1/memory/link", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
@@ -200,7 +200,7 @@ class ConPortClient:
         }
         if fields:
             body["fields"] = fields
-        r = self._client.post("/api/v1/sphere/event", json=body)
+        r = self._client.post("/api/v1/memory/event", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
@@ -216,7 +216,7 @@ class ConPortClient:
             params["scope"] = json.dumps(scope)
         if intent:
             params["intent"] = intent
-        r = self._client.get("/api/v1/sphere/recall", params=params,
+        r = self._client.get("/api/v1/memory/recall", params=params,
                              timeout=timeout or self._client.timeout)
         r.raise_for_status()
         # v4 recall returns a typed list under "results" (node|item); "nodes" is
@@ -226,13 +226,13 @@ class ConPortClient:
     # ── Aux: conversation intake ──────────────────────────────────────
 
     def chat_turn(self, agent_uuid: str, role: str, text: str) -> dict[str, Any]:
-        r = self._client.post("/api/v1/sphere/chat-turn",
+        r = self._client.post("/api/v1/memory/chat-turn",
                               json={"agent_uuid": agent_uuid, "role": role, "text": text})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
     def extract_thread(self, agent_uuid: str, message_ids: list[int]) -> dict[str, Any]:
-        r = self._client.post("/api/v1/sphere/extract-thread",
+        r = self._client.post("/api/v1/memory/extract-thread",
                               json={"agent_uuid": agent_uuid, "message_ids": message_ids})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
@@ -273,20 +273,20 @@ class ConPortClient:
             body["source_entity_id"] = source_entity_id
         if edges:
             body["edges"] = edges
-        r = self._client.post("/api/v1/sphere/extract-into", json=body)
+        r = self._client.post("/api/v1/memory/extract-into", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
     # ── Aux: explore + timeline + cleanup ─────────────────────────────
 
     def get_subgraph(self, agent_uuid: str, root_node_id: int, *, depth: int = 2) -> dict[str, Any]:
-        r = self._client.get("/api/v1/sphere/subgraph",
+        r = self._client.get("/api/v1/memory/subgraph",
                              params={"agent_uuid": agent_uuid, "root_node_id": root_node_id, "depth": depth})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
     def graph_stats(self, agent_uuid: str) -> dict[str, Any]:
-        r = self._client.get("/api/v1/sphere/graph-stats",
+        r = self._client.get("/api/v1/memory/graph-stats",
                              params={"agent_uuid": agent_uuid})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
@@ -294,7 +294,7 @@ class ConPortClient:
     def node_forget(self, agent_uuid: str, node_id: int) -> dict[str, Any]:
         """Soft-forget a cognition node — hidden from every read surface,
         row kept server-side. Irreversible from the agent surface."""
-        r = self._client.post("/api/v1/sphere/node-forget",
+        r = self._client.post("/api/v1/memory/node-forget",
                               json={"agent_uuid": agent_uuid, "node_id": node_id})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
@@ -302,14 +302,14 @@ class ConPortClient:
     def node_mute(self, agent_uuid: str, node_id: int) -> dict[str, Any]:
         """Per-viewer mute — hide a node from THIS agent's reads only.
         Reversible via node_unmute; the shared corpus is untouched."""
-        r = self._client.post("/api/v1/sphere/node-mute",
+        r = self._client.post("/api/v1/memory/node-mute",
                               json={"agent_uuid": agent_uuid, "node_id": node_id})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
     def node_unmute(self, agent_uuid: str, node_id: int) -> dict[str, Any]:
         """Reverse a per-viewer mute — the node surfaces in reads again."""
-        r = self._client.post("/api/v1/sphere/node-unmute",
+        r = self._client.post("/api/v1/memory/node-unmute",
                               json={"agent_uuid": agent_uuid, "node_id": node_id})
         r.raise_for_status()
         return cast(dict[str, Any], r.json())

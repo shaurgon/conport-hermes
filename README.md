@@ -92,7 +92,7 @@ Non-secret config is stored at `$HERMES_HOME/conport_provider.json`. The API key
 ## Tool reference
 
 All tools are wrapped as REST calls under `https://api.conport.app/api/v1`
-(intent verbs under `/sphere/*`).
+(intent verbs under `/memory/*`).
 
 ### The five intent verbs (the everyday set)
 
@@ -133,7 +133,7 @@ Beyond the five, a few operations for needs the verbs don't cover:
 A Hermes agent reaches ConPort's agent layer through exactly one of two
 surfaces — both agent-layer only, never the project surface:
 
-1. **This plugin** — REST under `/api/v1/sphere/*` + `/api/v1/workspace/*`.
+1. **This plugin** — REST under `/api/v1/memory/*` + `/api/v1/workspace/*`.
    The default path; no MCP client needed.
 2. **MCP** — the same `agent_*` tools at `https://api.conport.app/mcp-agent`
    via the [`conport-agent`](../conport-plugin/skills/conport-agent/SKILL.md)
@@ -209,7 +209,7 @@ Yes. Set `api_base_url` to your instance URL during `hermes memory setup`.
 
 ## Status
 
-**Alpha.** E2E-validated against production `api.conport.app` — the intent verbs (`/sphere/*`), identity wizard, prefetch, and error paths round-trip cleanly.
+**Alpha.** E2E-validated against production `api.conport.app` — the intent verbs (`/memory/*`), identity wizard, prefetch, and error paths round-trip cleanly.
 
 ## Source
 
