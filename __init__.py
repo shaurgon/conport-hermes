@@ -19,7 +19,7 @@ from .tools import TOOL_SCHEMAS, dispatch_tool
 # bump: pyproject.toml `version`, plugin.yaml `version` (what Hermes displays),
 # CHANGELOG.md, and backend LATEST_SKILL_VERSIONS["conport-hermes"]. Missing
 # plugin.yaml once already showed the host a stale 4.1.0 (decision-808).
-__version__ = "4.14.0"
+__version__ = "4.15.0"
 
 PROVIDER_NAME = "conport"
 
@@ -84,9 +84,7 @@ agent_remember("2026-06-04 rewrote research-loop: topic/source split, cron "
 ```
 
 A self-change you don't record is one you will later mistake for a bug and
-revert. And when you say "stored as authored skill X", you MUST actually call
-`agent_write_skill(X, …)` — verify X appears in `skills` next `agent_init`; a
-node that only *describes* the skill is not the skill.
+revert.
 
 ---
 
@@ -247,15 +245,6 @@ def _format_init_block(payload: dict[str, Any]) -> str | None:
             lines.append(f"- [#{nid}] {content}")
         lines.append("")
 
-    skills = payload.get("skills") or []
-    if skills:
-        lines.append("Skills — your authored loops (fetch the body with get_skill when one fits):")
-        for sk in skills:
-            name = sk.get("name", "?")
-            desc = _truncate(str(sk.get("description") or ""), 100)
-            lines.append(f"- {name}: {desc}" if desc else f"- {name}")
-        lines.append("")
-
     mature_communities = payload.get("mature_communities") or []
     if mature_communities:
         lines.append(
@@ -337,7 +326,7 @@ def _read_api_key_from_env_file(hermes_home: str) -> str | None:
     return None
 
 
-DEFAULT_API_BASE = "https://api.conport.app"
+DEFAULT_API_BASE = "https://agent.conport.app"
 IDENTITY_FILENAME = "conport.json"
 PROVIDER_CONFIG_FILENAME = "conport_provider.json"
 

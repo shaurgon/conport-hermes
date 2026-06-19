@@ -294,45 +294,6 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
 
-    # ── Skills: authored loops (body in storage, description for discovery) ──
-
-    {
-        "name": "agent_write_skill",
-        "description": (
-            "Author (or update) a reusable skill — your own loop / procedure. "
-            "The body (full markdown — your loop steps) is kept in storage; the "
-            "one-line description is what surfaces in agent_init and recall, so "
-            "future-you finds it without reloading the whole text. When you keep "
-            "doing the same structural work (nightly research, daily scoring), "
-            "write it down once here instead of re-improvising."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Canonical skill name, e.g. 'dream-topic-loop'."},
-                "description": {"type": "string", "description": "One line — when to run this and what it does."},
-                "body": {"type": "string", "description": "The full procedure (markdown)."},
-            },
-            "required": ["name", "description", "body"],
-        },
-    },
-
-    {
-        "name": "agent_get_skill",
-        "description": (
-            "Fetch a skill's full body on demand — one loop, not the whole pile. "
-            "Call when a skill description (from agent_init or recall) fits what "
-            "you're about to do; pull the body and follow it."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-            },
-            "required": ["name"],
-        },
-    },
-
     # ── Aux: conversation intake ──────────────────────────────────────
 
     {

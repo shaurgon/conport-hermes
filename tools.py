@@ -79,9 +79,6 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         scope=a.get("scope"),
         intent=a.get("intent"),
     ),
-    # skills: authored loops
-    "agent_write_skill": lambda c, u, a: c.write_skill(u, a["name"], a["description"], a["body"]),
-    "agent_get_skill": lambda c, u, a: c.get_skill(a["name"]) or {},
     # aux: conversation intake
     "agent_chat_turn": lambda c, u, a: c.chat_turn(u, a["role"], a["text"]),
     "agent_extract_thread": lambda c, u, a: c.extract_thread(u, list(a["message_ids"])),

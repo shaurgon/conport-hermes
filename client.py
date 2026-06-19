@@ -223,25 +223,6 @@ class ConPortClient:
         # a back-compat subset. Prefer results.
         return cast(list[RecallHit], _list_under(r.json(), "results", "nodes"))
 
-    # ── Intent: skills (authored loops — body in storage, on demand) ──
-
-    def write_skill(self, agent_uuid: str, name: str, description: str, body: str) -> dict[str, Any]:
-        r = self._client.post(
-            "/api/v1/sphere/skill",
-            json={"agent_uuid": agent_uuid, "name": name, "description": description, "body": body},
-        )
-        r.raise_for_status()
-        return cast(dict[str, Any], r.json())
-
-    def get_skill(self, name: str) -> dict[str, Any] | None:
-        # owner-scoped server-side; agent_uuid not needed (the descriptor is the
-        # owner's). Returns {name, description, body} or None if absent.
-        r = self._client.get(f"/api/v1/sphere/skill/{name}")
-        if r.status_code == 404:
-            return None
-        r.raise_for_status()
-        return cast(dict[str, Any], r.json())
-
     # ── Aux: conversation intake ──────────────────────────────────────
 
     def chat_turn(self, agent_uuid: str, role: str, text: str) -> dict[str, Any]:

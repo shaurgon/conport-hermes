@@ -53,11 +53,6 @@ class Collection(TypedDict, total=False):
     status_vocab: list[str] | None
 
 
-class SkillDescriptor(TypedDict, total=False):
-    name: str
-    description: str | None   # body lives in storage, fetched via get_skill
-
-
 class AgentInitPayload(TypedDict, total=False):
     agent_uuid: str
     owner_id: str
@@ -67,7 +62,6 @@ class AgentInitPayload(TypedDict, total=False):
     identity: list[InitAnchor]
     principles: list[InitAnchor]
     broadcast_facts: list[InitAnchor]
-    skills: list[SkillDescriptor]
     mature_communities: list[MatureCommunity]
     borderline_nodes: list[BorderlineNode]
     pending_extraction: PendingExtraction | None

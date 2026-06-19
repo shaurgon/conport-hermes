@@ -51,7 +51,7 @@ else:
         ConPortClient = _client_mod.ConPortClient
         run_identity_wizard = _setup_mod.run_identity_wizard
 
-DEFAULT_API_BASE = "https://api.conport.app"
+DEFAULT_API_BASE = "https://agent.conport.app"
 
 
 def _hermes_home() -> str:
