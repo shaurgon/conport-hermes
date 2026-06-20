@@ -98,15 +98,19 @@ class ConPortClient:
         self, agent_uuid: str, name: str, fields: list[str],
         statuses: list[str] | None = None,
         refs: dict[str, Any] | None = None,
+        field_roles: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         # ``refs`` values are either the legacy scalar ``target_kind`` or the
         # array form ``{"kind": target_kind, "multi": true}`` (decision-852).
+        # ``field_roles`` marks each field's projectional role (doc-105 §1.1).
         # No client-side validation — the server owns it; we forward verbatim.
         body: dict[str, Any] = {"agent_uuid": agent_uuid, "name": name, "fields": fields}
         if statuses:
             body["statuses"] = statuses
         if refs:
             body["refs"] = refs
+        if field_roles:
+            body["field_roles"] = field_roles
         r = self._client.post("/api/v1/memory/create-kind", json=body)
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
@@ -371,6 +375,56 @@ class ConPortClient:
         r = self._client.get("/api/v1/workspace/events", params=params)
         r.raise_for_status()
         return _list_under(r.json(), "events")
+
+    # ── Graph: entity edges + workspace views ─────────────────────────
+
+    def link_entities(
+        self, agent_uuid: str,
+        source_kind: str, source_name: str,
+        target_kind: str, target_name: str,
+        edge_type: str,
+        properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Assert an explicit graph-mode edge between two existing workspace items.
+
+        edge_type must be one of contributes_to / derived_from / raises / spawns.
+        Idempotent — asserting the same triple twice returns the existing edge.
+        Owner is determined server-side from the authenticated token."""
+        body: dict[str, Any] = {
+            "agent_uuid": agent_uuid,
+            "source_kind": source_kind,
+            "source_name": source_name,
+            "target_kind": target_kind,
+            "target_name": target_name,
+            "edge_type": edge_type,
+        }
+        if properties:
+            body["properties"] = properties
+        r = self._client.post("/api/v1/workspace/link", json=body)
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def workspace_graph(self) -> dict[str, Any]:
+        """Full workspace node-link graph (all entities + explicit edges).
+
+        Returns {nodes, edges, node_count, edge_count}."""
+        r = self._client.get("/api/v1/workspace/graph")
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def topic_state(self, topic_name: str) -> dict[str, Any]:
+        """State-of-a-topic: sources, conclusions, open questions, spawned topics."""
+        r = self._client.get(f"/api/v1/workspace/topics/{topic_name}/state")
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def project_record(self, kind: str, name: str) -> dict[str, Any]:
+        """Workspace record projected by field roles + explicit in/out edges.
+
+        Returns {node, derived_edges, in_edges, out_edges}."""
+        r = self._client.get(f"/api/v1/workspace/entities/{kind}/{name}/projection")
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
 
     # ── Aux: run (skill-execution tracking) ───────────────────────────
 

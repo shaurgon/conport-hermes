@@ -35,9 +35,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "'topic'}); a field can also name a LIST of items of one kind via "
             "{field: {kind: target_kind, multi: true}}. The ref field is "
             "validated on every write (each element must name a real item of "
-            "the target kind, or you get unknown_ref). Pick ONE "
-            "canonical name per domain; check agent_init.collections first so "
-            "you reuse an existing kind instead of fragmenting it."
+            "the target kind, or you get unknown_ref). 'field_roles' marks "
+            "each field's projectional role (identity/attribute/body/edge); "
+            "an edge-role field requires {role: edge, target_kind, edge_type}. "
+            "Pick ONE canonical name per domain; check agent_init.collections "
+            "first so you reuse an existing kind instead of fragmenting it."
         ),
         "parameters": {
             "type": "object",
@@ -60,6 +62,16 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "{field_name: target_kind}, or array form "
                         "{field_name: {kind: target_kind, multi: true}} for a "
                         "field that names a list of items of one kind."
+                    ),
+                },
+                "field_roles": {
+                    "type": "object",
+                    "description": (
+                        "Projectional role per field. Bare string form: "
+                        "{field: 'identity'|'attribute'|'body'}. Edge form: "
+                        "{field: {role: 'edge', target_kind: <kind>, "
+                        "edge_type: 'contributes_to'|'derived_from'|'raises'|'spawns'}}. "
+                        "Unknown/absent role defaults to 'attribute'."
                     ),
                 },
             },
@@ -612,6 +624,92 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
             },
             "required": ["community_id", "content"],
+        },
+    },
+
+    # ── Graph: explicit entity edges + workspace views ────────────────
+
+    {
+        "name": "agent_link_entities",
+        "description": (
+            "Assert an explicit graph-mode edge between two existing workspace "
+            "items. Both items must already exist (owner-scoped). Idempotent — "
+            "asserting the same triple twice returns the existing edge id. "
+            "edge_type must be one of: contributes_to (a source/finding supports "
+            "a topic or conclusion), derived_from (a conclusion distilled from "
+            "sources), raises (a source/conclusion surfaces an open question), "
+            "spawns (a topic spawns a sub-topic). Use agent_workspace_graph to "
+            "see the resulting graph."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source_kind": {"type": "string", "description": "Kind of the source item."},
+                "source_name": {"type": "string", "description": "Name of the source item."},
+                "target_kind": {"type": "string", "description": "Kind of the target item."},
+                "target_name": {"type": "string", "description": "Name of the target item."},
+                "edge_type": {
+                    "type": "string",
+                    "enum": ["contributes_to", "derived_from", "raises", "spawns"],
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "Optional edge metadata (confidence, note, etc.).",
+                },
+            },
+            "required": ["source_kind", "source_name", "target_kind", "target_name", "edge_type"],
+        },
+    },
+
+    {
+        "name": "agent_workspace_graph",
+        "description": (
+            "Full workspace node-link graph — all entities + explicit edges "
+            "asserted via agent_link_entities. Returns {nodes, edges, "
+            "node_count, edge_count}. Nodes carry {id, kind, name, status}; "
+            "edges carry {source, target, edge_type}. Use for graph traversal "
+            "or to understand the overall research structure."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+
+    {
+        "name": "agent_topic_state",
+        "description": (
+            "State-of-a-topic slice: traverse the explicit edges from a topic "
+            "and return its contributing sources, derived conclusions, raised "
+            "open questions, and spawned sub-topics. Returns {topic, sources, "
+            "conclusions, open_questions, spawned_topics}. The topic entity "
+            "must already exist."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic_name": {"type": "string", "description": "Name of the topic entity."},
+            },
+            "required": ["topic_name"],
+        },
+    },
+
+    {
+        "name": "agent_project_record",
+        "description": (
+            "Read a workspace record projected by its field roles plus explicit "
+            "in/out edges. Returns {node: {kind, name, attributes, body}, "
+            "derived_edges (from edge-role fields, resolved), in_edges, "
+            "out_edges (explicit harness_entity_edge rows)}. Use to inspect a "
+            "single item's full graph neighbourhood."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "description": "The item's kind."},
+                "name": {"type": "string", "description": "The item's name."},
+            },
+            "required": ["kind", "name"],
         },
     },
 

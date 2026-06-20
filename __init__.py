@@ -19,7 +19,7 @@ from .tools import TOOL_SCHEMAS, dispatch_tool
 # bump: pyproject.toml `version`, plugin.yaml `version` (what Hermes displays),
 # CHANGELOG.md, and backend LATEST_SKILL_VERSIONS["conport-hermes"]. Missing
 # plugin.yaml once already showed the host a stale 4.1.0 (decision-808).
-__version__ = "4.15.0"
+__version__ = "4.16.0"
 
 PROVIDER_NAME = "conport"
 
@@ -119,6 +119,38 @@ Rules that keep domains clean (skip them and you fragment):
 `status` is validated against the kind's `statuses`; unknown fields are
 accepted (the schema grows). `recall` finds items by content; `event`s are an
 item's timeline (read with `agent_event_query`, not `recall`).
+
+---
+
+### Workspace graph: projectional vs. graph mode
+
+Two ways to use the graph — pick one per task:
+
+**Projectional (trackers).** Write each record flat:
+`agent_remember(kind="source", name="…", fields={url: …, verdict: …})`.
+Edges derive *automatically* from `field_roles` you declared in
+`agent_create_kind` — identity fields become the node key, edge-role fields
+become typed edges, body fields become text content.
+Use when: a clear domain entity with stable fields you'll filter/compare.
+
+**Graph (research).** Records ARE nodes (`topic`, `source`, `conclusion`,
+`open_question`). Assert edges *explicitly* and incrementally as your
+understanding grows:
+`agent_link_entities(source_kind, source_name, target_kind, target_name, edge_type)`
+with `contributes_to` / `derived_from` / `raises` / `spawns`.
+Use when: relationships need your judgment and accumulate across turns.
+
+**Deciding:** if a link is derivable mechanically from a field value →
+projectional; if the link requires you to judge and accretes over time →
+graph.
+
+**Three anti-blob rules (one line each):**
+1. Don't serialize structure into prose — facets become nodes + edges; only
+   genuinely facet-less text stays in `body`.
+2. Timeline ≠ graph — a raw measurement stays an event
+   (`agent_event`); a distilled summary is an `attribute` set by judgment.
+3. `conclusion` and `open_question` are first-class kinds, not fields of a
+   `topic`.
 
 ---
 

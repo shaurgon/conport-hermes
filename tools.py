@@ -42,7 +42,7 @@ def dispatch_tool(
 _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
     # intent verbs
     "agent_create_kind": lambda c, u, a: c.create_kind(
-        u, a["name"], list(a["fields"]), a.get("statuses"), a.get("refs"),
+        u, a["name"], list(a["fields"]), a.get("statuses"), a.get("refs"), a.get("field_roles"),
     ),
     "agent_get_kind": lambda c, u, a: c.get_kind(u, a["name"]) or {},
     "agent_get_referrers": lambda c, u, a: c.get_referrers(a["kind"], a["name"]),
@@ -119,6 +119,17 @@ _HANDLERS: dict[str, Callable[[ConPortClient, str, dict[str, Any]], Any]] = {
         visibility="broadcast",
         edges=[{"target_node_id": int(a["community_id"]), "edge_type": "skill_of"}],
     ),
+    # graph: entity edges + workspace views
+    "agent_link_entities": lambda c, u, a: c.link_entities(
+        u,
+        a["source_kind"], a["source_name"],
+        a["target_kind"], a["target_name"],
+        a["edge_type"],
+        a.get("properties"),
+    ),
+    "agent_workspace_graph": lambda c, u, a: c.workspace_graph(),
+    "agent_topic_state": lambda c, u, a: c.topic_state(a["topic_name"]),
+    "agent_project_record": lambda c, u, a: c.project_record(a["kind"], a["name"]),
     # aux: runs
     "agent_run_start": lambda c, u, a: c.run_start(u, a["skill_name"], params=a.get("params")),
     "agent_run_finish": lambda c, u, a: c.run_finish(
